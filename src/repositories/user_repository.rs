@@ -1,79 +1,85 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use sqlx::PgPool;
 use uuid::Uuid;
-
 use crate::domain::{User, CreateUserRequest, Result, ApiError};
 
 #[derive(Debug, Clone)]
 pub struct UserRepository {
-    users: Arc<RwLock<HashMap<Uuid, User>>>,
-    user_emails: Arc<RwLock<HashMap<String, Uuid>>>, // email -> user_id mapping
+    pool: PgPool,
 }
 
 impl UserRepository {
-    pub fn new() -> Self {
-        Self {
-            users: Arc::new(RwLock::new(HashMap::new())),
-            user_emails: Arc::new(RwLock::new(HashMap::new())),
-        }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
     }
 
     pub async fn create(&self, request: CreateUserRequest) -> Result<User> {
-        // Validate data length constraints
-        self.validate_user_data(&request.name, &request.email)?;
-        
-        // Check if email already exists
-        {
-            let emails = self.user_emails.read().await;
-            if emails.contains_key(&request.email) {
-                return Err(ApiError::EmailAlreadyExists {
-                    email: request.email,
-                });
-            }
+        // Check if email exists
+        let exists: Option<(Uuid,)> = sqlx::query_as(
+            "SELECT id FROM users WHERE email = $1"
+        )
+        .bind(&request.email)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| ApiError::InternalError(format!("DB error checking email: {}", e)))?;
+
+        if exists.is_some() {
+            return Err(ApiError::EmailAlreadyExists { email: request.email });
         }
 
-        let user = User::new(request.name, request.email.clone());
-        let user_id = user.id;
+        let rec = sqlx::query_as!(
+            User,
+            r#"
+            INSERT INTO users (name, email, password_hash)
+            VALUES ($1, $2, '')
+            RETURNING id, name, email, created_at
+            "#,
+            request.name,
+            request.email
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| ApiError::InternalError(format!("DB insert user error: {}", e)))?;
 
-        // Store user and email mapping
-        {
-            let mut users = self.users.write().await;
-            let mut emails = self.user_emails.write().await;
-            
-            users.insert(user_id, user.clone());
-            emails.insert(request.email, user_id);
-        }
-
-        Ok(user)
+        Ok(rec)
     }
 
     pub async fn find_by_id(&self, id: Uuid) -> Result<User> {
-        let users = self.users.read().await;
-        users
-            .get(&id)
-            .cloned()
-            .ok_or(ApiError::UserNotFound { id })
+        let rec = sqlx::query_as!(
+            User,
+            r#"
+            SELECT id, name, email, created_at
+            FROM users
+            WHERE id = $1
+            "#,
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| ApiError::InternalError(format!("DB select user error: {}", e)))?;
+
+        rec.ok_or(ApiError::UserNotFound { id })
     }
 
     pub async fn exists(&self, id: Uuid) -> bool {
-        let users = self.users.read().await;
-        users.contains_key(&id)
+        let rec: Result<Option<(Uuid,)>> = sqlx::query_as(
+            "SELECT id FROM users WHERE id = $1"
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| ApiError::InternalError(format!("DB exists user error: {}", e)));
+
+        matches!(rec, Ok(Some(_)))
     }
 
     pub async fn count(&self) -> usize {
-        let users = self.users.read().await;
-        users.len()
-    }
+        let rec: Result<Option<(i64,)>> = sqlx::query_as(
+            "SELECT COUNT(*) FROM users"
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| ApiError::InternalError(format!("DB count users error: {}", e)));
 
-    // Helper function that could potentially fail
-    fn validate_user_data(&self, name: &str, email: &str) -> Result<()> {
-        if name.len() > 100 {
-            return Err(ApiError::InternalError("User name too long for storage".to_string()));
-        }
-        if email.len() > 255 {
-            return Err(ApiError::InternalError("Email too long for storage".to_string()));
-        }
-        Ok(())
+        rec.ok().flatten().map(|t| t.0 as usize).unwrap_or(0)
     }
 }

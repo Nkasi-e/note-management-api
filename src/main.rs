@@ -3,7 +3,8 @@ use note_task_api::{
     repositories::{UserRepository, TaskRepository},
     services::{UserService, TaskService},
     routes::{user_routes, task_routes, health_routes},
-    middleware::logging_middleware,
+    middleware::{logging_middleware, json_404_middleware},
+    init_pg_pool,
 };
 
 use axum::Router;
@@ -13,6 +14,9 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() {
+    // Load environment variables from .env if present
+    dotenvy::dotenv().ok();
+
     // Initialize tracing
     tracing_subscriber::registry()
         .with(
@@ -22,12 +26,15 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // Load configuration
-    let config = AppConfig::default();
+    // Load configuration from environment (with defaults)
+    let config = AppConfig::from_env();
     
-    // Initialize repositories
-    let user_repository = UserRepository::new();
-    let task_repository = TaskRepository::new();
+    // Initialize Postgres pool
+    let pool = init_pg_pool(&config).await;
+    
+    // Initialize repositories (Postgres-backed)
+    let user_repository = UserRepository::new(pool.clone());
+    let task_repository = TaskRepository::new(pool.clone());
     
     // Initialize services
     let user_service = UserService::new(user_repository.clone());
@@ -40,9 +47,10 @@ async fn main() {
         .merge(task_routes().with_state(task_service))
         // Add middleware
         .layer(logging_middleware())
+        .layer(axum::middleware::from_fn(json_404_middleware))
         .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any));
 
-    // Run the server
+    // Run the server using config-resolved host/port
     let addr = SocketAddr::from((config.server.host.parse::<std::net::IpAddr>().unwrap(), config.server.port));
     tracing::info!("Server running on http://{}", addr);
 
