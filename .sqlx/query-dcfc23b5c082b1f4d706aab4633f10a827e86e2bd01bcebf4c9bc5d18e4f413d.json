@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, name, email, created_at\n            FROM users\n            WHERE id = $1\n            ",
+  "query": "\n            SELECT id, name, email, role as \"role: crate::domain::user::UserRole\", created_at\n            FROM users\n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -20,6 +20,21 @@
       },
       {
         "ordinal": 3,
+        "name": "role: crate::domain::user::UserRole",
+        "type_info": {
+          "Custom": {
+            "name": "user_role",
+            "kind": {
+              "Enum": [
+                "user",
+                "admin"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
@@ -33,8 +48,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "c74def4bd051af73d7c01e7c372d8ddcf722d7df86a64101a7b4f44c97815984"
+  "hash": "dcfc23b5c082b1f4d706aab4633f10a827e86e2bd01bcebf4c9bc5d18e4f413d"
 }

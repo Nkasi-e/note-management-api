@@ -3,8 +3,10 @@ pub mod user_handlers;
 pub mod task_handlers;
 pub mod health_handlers;
 pub mod api_response;
+pub mod auth_handlers;
 
 pub use user_handlers::*;
 pub use task_handlers::*;
 pub use health_handlers::*;
 pub use api_response::*;
+pub use auth_handlers::*;

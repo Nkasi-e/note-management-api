@@ -1,8 +1,8 @@
 use note_task_api::{
     config::AppConfig,
     repositories::{UserRepository, TaskRepository},
-    services::{UserService, TaskService},
-    routes::{user_routes, task_routes, health_routes},
+    services::{UserService, TaskService, AuthService},
+    routes::{api_v1_routes, health_routes},
     middleware::{logging_middleware, json_404_middleware},
     init_pg_pool,
 };
@@ -38,13 +38,13 @@ async fn main() {
     
     // Initialize services
     let user_service = UserService::new(user_repository.clone());
-    let task_service = TaskService::new(task_repository, user_repository);
+    let task_service = TaskService::new(task_repository, user_repository.clone());
+    let auth_service = AuthService::new(user_repository, config.auth.clone());
 
     // Build our application with modular routes
     let app = Router::new()
         .merge(health_routes())
-        .merge(user_routes().with_state(user_service))
-        .merge(task_routes().with_state(task_service))
+        .merge(api_v1_routes(user_service, task_service, auth_service, config.auth.clone()))
         // Add middleware
         .layer(logging_middleware())
         .layer(axum::middleware::from_fn(json_404_middleware))
