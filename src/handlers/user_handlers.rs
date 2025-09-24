@@ -1,12 +1,14 @@
 use axum::{
     extract::{Path, State},
-    response::Json,
+    response::IntoResponse,
+    Json,
 };
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::domain::{User, CreateUserRequest, Result, ApiError};
 use crate::services::UserService;
+use super::{respond_created, respond_ok};
 
 #[derive(Debug, Deserialize)]
 pub struct UserIdPath {
@@ -16,20 +18,20 @@ pub struct UserIdPath {
 pub async fn create_user(
     State(user_service): State<UserService>,
     Json(request): Json<CreateUserRequest>,
-) -> Result<Json<User>> {
+) -> Result<impl IntoResponse> {
     let user = user_service.create_user(request).await?;
-    Ok(Json(user))
+    Ok(respond_created(user))
 }
 
 pub async fn get_user(
     State(user_service): State<UserService>,
     Path(params): Path<UserIdPath>,
-) -> Result<Json<User>> {
+) -> Result<impl IntoResponse> {
     let user_id = params
         .id
         .parse::<Uuid>()
         .map_err(|_| ApiError::InvalidUuid(params.id))?;
 
     let user = user_service.get_user(user_id).await?;
-    Ok(Json(user))
+    Ok(respond_ok(user))
 }

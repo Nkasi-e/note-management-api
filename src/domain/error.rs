@@ -40,6 +40,7 @@ impl IntoResponse for ApiError {
         };
 
         let body = Json(json!({
+            "success": false,
             "error": error_message,
             "status": status.as_u16()
         }));
@@ -49,3 +50,19 @@ impl IntoResponse for ApiError {
 }
 
 pub type Result<T> = std::result::Result<T, ApiError>;
+
+// Mappers
+impl From<sqlx::Error> for ApiError {
+    fn from(e: sqlx::Error) -> Self {
+        match e {
+            sqlx::Error::RowNotFound => ApiError::InternalError("Resource not found".into()),
+            _ => ApiError::InternalError(format!("Database error: {}", e)),
+        }
+    }
+}
+
+impl From<axum::extract::rejection::JsonRejection> for ApiError {
+    fn from(e: axum::extract::rejection::JsonRejection) -> Self {
+        ApiError::ValidationError(e.to_string())
+    }
+}
