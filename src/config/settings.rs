@@ -5,6 +5,7 @@ pub struct AppConfig {
     pub server: ServerConfig,
     pub database: DatabaseConfig,
     pub logging: LoggingConfig,
+    pub auth: AuthConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,6 +26,14 @@ pub struct DatabaseConfig {
 pub struct LoggingConfig {
     pub level: String,
     pub format: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthConfig {
+    pub jwt_secret: String,
+    pub issuer: String,
+    pub audience: String,
+    pub expiry_minutes: u64,
 }
 
 impl AppConfig {
@@ -49,6 +58,10 @@ impl AppConfig {
 
         let level = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
         let format = std::env::var("LOG_FORMAT").unwrap_or_else(|_| "json".to_string());
+        let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+        let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "note-task-api".to_string());
+        let audience = std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "note-clients".to_string());
+        let expiry_minutes: u64 = std::env::var("JWT_EXP_MINUTES").ok().and_then(|v| v.parse().ok()).unwrap_or(60);
 
         AppConfig {
             server: ServerConfig {
@@ -65,6 +78,7 @@ impl AppConfig {
                 level,
                 format
             },
+            auth: AuthConfig { jwt_secret, issuer, audience, expiry_minutes },
         }
     }
 }

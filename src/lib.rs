@@ -7,6 +7,8 @@ pub mod handlers;
 pub mod middleware;
 pub mod routes;
 pub mod db;
+pub mod validation;
+pub mod extractors;
 
 // Re-export commonly used types for convenience
 pub use domain::error::{ApiError, Result};
