@@ -26,7 +26,6 @@ pub struct Task {
 pub struct CreateTaskRequest {
     pub title: String,
     pub description: Option<String>,
-    pub user_id: Uuid,
 }
 
 impl Task {
@@ -49,7 +48,13 @@ pub fn slugify(title: &str) -> String {
     title
         .trim()
         .to_lowercase()
-        .replace(|c: char| !c.is_alphanumeric() && c != ' ', "-")
+        .chars()
+        .map(|c| match c {
+            'a'..='z' | '0'..='9' => c,
+            ' ' => '-',
+            _ => '-',
+        })
+        .collect::<String>()
         .split('-')
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()

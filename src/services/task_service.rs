@@ -1,7 +1,8 @@
 use uuid::Uuid;
+use tracing::{info, debug};
 
 use crate::domain::{Task, CreateTaskRequest, Result, ApiError};
-use crate::repositories::{TaskRepository, UserRepository};
+use crate::repositories::{TaskRepository, UserRepository, CreateTaskRequestInternal};
 use crate::cache::{RedisCache, task_key, user_tasks_key, all_tasks_key};
 
 #[derive(Debug, Clone)]
@@ -20,19 +21,26 @@ impl TaskService {
         }
     }
 
-    pub async fn create_task(&self, request: CreateTaskRequest) -> Result<Task> {
+    pub async fn create_task(&self, request: CreateTaskRequest, user_id: Uuid) -> Result<Task> {
         // Business logic validation
         self.validate_task_request(&request)?;
         
         // Verify user exists
-        if !self.user_repository.exists(request.user_id).await {
+        if !self.user_repository.exists(user_id).await {
             return Err(ApiError::UserNotFound {
-                id: request.user_id,
+                id: user_id,
             });
         }
 
+        // Create internal request with user_id
+        let internal_request = CreateTaskRequestInternal {
+            title: request.title,
+            description: request.description,
+            user_id,
+        };
+
         // Delegate to repository
-        let task = self.task_repository.create(request).await?;
+        let task = self.task_repository.create(internal_request).await?;
 
         // Invalidate caches related to tasks
         if let Some(cache) = &self.cache {
@@ -46,13 +54,19 @@ impl TaskService {
 
     pub async fn get_task(&self, id: Uuid) -> Result<Task> {
         if let Some(cache) = &self.cache {
+            debug!("Checking cache for task: {}", id);
             if let Ok(Some(task)) = cache.get_json::<Task>(&task_key(&id)).await {
+                info!("Cache HIT for task: {}", id);
                 return Ok(task);
             }
+            info!("Cache MISS for task: {}", id);
         }
 
+        debug!("Fetching task from database: {}", id);
         let task = self.task_repository.find_by_id(id).await?;
+        
         if let Some(cache) = &self.cache {
+            debug!("Caching task: {}", id);
             let _ = cache.set_json(&task_key(&id), &task).await;
         }
         Ok(task)

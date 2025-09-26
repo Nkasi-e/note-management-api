@@ -5,6 +5,7 @@ use axum::{
 };
 use serde::Deserialize;
 use uuid::Uuid;
+use tracing::{info, debug};
 
 use crate::domain::{CreateTaskRequest, Result, ApiError};
 use crate::domain::user::UserRole;
@@ -27,12 +28,12 @@ pub async fn create_task(
     Extension(current_user): Extension<CurrentUser>,
     Json(request): Json<CreateTaskRequest>,
 ) -> Result<impl IntoResponse> {
-    // Users can only create tasks for themselves
-    if current_user.role != UserRole::Admin && current_user.id != request.user_id {
-        return Err(ApiError::forbidden("You can only create tasks for yourself"));
-    }
-
-    let task = task_service.create_task(request).await?;
+    info!("Creating task for user {}: {}", current_user.id, request.title);
+    debug!("Task request payload: {:?}", request);
+    
+    let task = task_service.create_task(request, current_user.id).await?;
+    
+    info!("Task created successfully: {} (slug: {})", task.id, task.slug);
     Ok(respond_created(task))
 }
 

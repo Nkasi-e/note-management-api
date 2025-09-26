@@ -3,7 +3,7 @@ use note_task_api::{
     repositories::{UserRepository, TaskRepository},
     services::{UserService, TaskService, AuthService},
     routes::{api_v1_routes, health_routes},
-    middleware::{logging_middleware, json_404_middleware},
+    middleware::{logging_middleware, request_logging_middleware, json_404_middleware},
     init_pg_pool,
 };
 
@@ -54,6 +54,7 @@ async fn main() {
         .merge(health_routes())
         .merge(api_v1_routes(user_service, task_service, auth_service, config.auth.clone()))
         // Add middleware
+        .layer(axum::middleware::from_fn(request_logging_middleware))
         .layer(logging_middleware())
         .layer(axum::middleware::from_fn(json_404_middleware))
         .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any));
