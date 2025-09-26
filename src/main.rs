@@ -11,6 +11,9 @@ use axum::Router;
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use redis::Client as RedisClient;
+use redis::aio::ConnectionManager as RedisConnectionManager;
+use note_task_api::cache::RedisCache;
 
 #[tokio::main]
 async fn main() {
@@ -36,9 +39,14 @@ async fn main() {
     let user_repository = UserRepository::new(pool.clone());
     let task_repository = TaskRepository::new(pool.clone());
     
+    // Initialize Redis and cache
+    let redis_client = RedisClient::open(config.redis.url.clone()).expect("Invalid REDIS_URL");
+    let redis_manager = RedisConnectionManager::new(redis_client).await.expect("Failed to connect to Redis");
+    let cache = RedisCache::new(redis_manager, config.redis.ttl_secs);
+
     // Initialize services
     let user_service = UserService::new(user_repository.clone());
-    let task_service = TaskService::new(task_repository, user_repository.clone());
+    let task_service = TaskService::new(task_repository, user_repository.clone(), Some(cache.clone()));
     let auth_service = AuthService::new(user_repository, config.auth.clone());
 
     // Build our application with modular routes

@@ -6,6 +6,7 @@ pub struct AppConfig {
     pub database: DatabaseConfig,
     pub logging: LoggingConfig,
     pub auth: AuthConfig,
+    pub redis: RedisConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +35,12 @@ pub struct AuthConfig {
     pub issuer: String,
     pub audience: String,
     pub expiry_minutes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RedisConfig {
+    pub url: String,
+    pub ttl_secs: u64,
 }
 
 impl AppConfig {
@@ -79,6 +86,10 @@ impl AppConfig {
                 format
             },
             auth: AuthConfig { jwt_secret, issuer, audience, expiry_minutes },
+            redis: RedisConfig {
+                url: std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string()),
+                ttl_secs: std::env::var("REDIS_TTL_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(300),
+            },
         }
     }
 }
