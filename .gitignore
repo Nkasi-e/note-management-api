@@ -1,2 +1,3 @@
 /target
 .env
+REDIS_COMMANDS.md

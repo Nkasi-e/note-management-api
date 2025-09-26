@@ -2,18 +2,21 @@ use uuid::Uuid;
 
 use crate::domain::{Task, CreateTaskRequest, Result, ApiError};
 use crate::repositories::{TaskRepository, UserRepository};
+use crate::cache::{RedisCache, task_key, user_tasks_key, all_tasks_key};
 
 #[derive(Debug, Clone)]
 pub struct TaskService {
     task_repository: TaskRepository,
     user_repository: UserRepository,
+    cache: Option<RedisCache>,
 }
 
 impl TaskService {
-    pub fn new(task_repository: TaskRepository, user_repository: UserRepository) -> Self {
-        Self { 
+    pub fn new(task_repository: TaskRepository, user_repository: UserRepository, cache: Option<RedisCache>) -> Self {
+        Self {
             task_repository,
             user_repository,
+            cache,
         }
     }
 
@@ -29,11 +32,30 @@ impl TaskService {
         }
 
         // Delegate to repository
-        self.task_repository.create(request).await
+        let task = self.task_repository.create(request).await?;
+
+        // Invalidate caches related to tasks
+        if let Some(cache) = &self.cache {
+            let _ = cache.del(&all_tasks_key()).await;
+            let _ = cache.del(&user_tasks_key(&task.user_id)).await;
+            let _ = cache.set_json(&task_key(&task.id), &task).await;
+        }
+
+        Ok(task)
     }
 
     pub async fn get_task(&self, id: Uuid) -> Result<Task> {
-        self.task_repository.find_by_id(id).await
+        if let Some(cache) = &self.cache {
+            if let Ok(Some(task)) = cache.get_json::<Task>(&task_key(&id)).await {
+                return Ok(task);
+            }
+        }
+
+        let task = self.task_repository.find_by_id(id).await?;
+        if let Some(cache) = &self.cache {
+            let _ = cache.set_json(&task_key(&id), &task).await;
+        }
+        Ok(task)
     }
 
     pub async fn get_tasks_by_user(&self, user_id: Uuid) -> Result<Vec<Task>> {
@@ -42,11 +64,31 @@ impl TaskService {
             return Err(ApiError::UserNotFound { id: user_id });
         }
 
-        self.task_repository.find_by_user_id(user_id).await
+        if let Some(cache) = &self.cache {
+            if let Ok(Some(tasks)) = cache.get_json::<Vec<Task>>(&user_tasks_key(&user_id)).await {
+                return Ok(tasks);
+            }
+        }
+
+        let tasks = self.task_repository.find_by_user_id(user_id).await?;
+        if let Some(cache) = &self.cache {
+            let _ = cache.set_json(&user_tasks_key(&user_id), &tasks).await;
+        }
+        Ok(tasks)
     }
 
     pub async fn get_all_tasks(&self) -> Result<Vec<Task>> {
-        self.task_repository.find_all().await
+        if let Some(cache) = &self.cache {
+            if let Ok(Some(tasks)) = cache.get_json::<Vec<Task>>(&all_tasks_key()).await {
+                return Ok(tasks);
+            }
+        }
+
+        let tasks = self.task_repository.find_all().await?;
+        if let Some(cache) = &self.cache {
+            let _ = cache.set_json(&all_tasks_key(), &tasks).await;
+        }
+        Ok(tasks)
     }
 
     pub async fn get_task_count(&self) -> usize {
