@@ -1,6 +1,6 @@
 use sqlx::PgPool;
 use uuid::Uuid;
-use crate::domain::{Task, Result, ApiError};
+use crate::domain::{Task, Result, ApiError, TaskQueryParams, PaginatedResponse, PaginationMeta};
 use crate::domain::task::{slugify, TaskStatus};
 
 #[derive(Debug, Clone)]
@@ -148,6 +148,120 @@ impl TaskRepository {
         .map_err(|e| ApiError::InternalError(format!("DB count tasks error: {}", e)));
 
         rec.ok().flatten().map(|t| t.0 as usize).unwrap_or(0)
+    }
+
+    /// Get tasks with pagination and filtering
+    pub async fn find_with_pagination(&self, query_params: &TaskQueryParams) -> Result<PaginatedResponse<Task>> {
+        // Validate pagination parameters
+        query_params.pagination.validate()
+            .map_err(|e| ApiError::bad_request(e))?;
+
+        // Build count query
+        let mut count_query = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM tasks WHERE 1=1");
+        
+        // Add filters to count query
+        if let Some(status) = &query_params.filters.status {
+            count_query.push(" AND status = ");
+            count_query.push_bind(status);
+        }
+        
+        if let Some(user_id) = &query_params.filters.user_id {
+            count_query.push(" AND user_id = ");
+            count_query.push_bind(user_id);
+        }
+        
+        if let Some(created_after) = &query_params.filters.created_after {
+            count_query.push(" AND created_at >= ");
+            count_query.push_bind(created_after);
+        }
+        
+        if let Some(created_before) = &query_params.filters.created_before {
+            count_query.push(" AND created_at <= ");
+            count_query.push_bind(created_before);
+        }
+        
+        if let Some(search) = &query_params.filters.search {
+            let search_pattern = format!("%{}%", search);
+            count_query.push(" AND (title ILIKE ");
+            count_query.push_bind(search_pattern.clone());
+            count_query.push(" OR description ILIKE ");
+            count_query.push_bind(search_pattern);
+            count_query.push(")");
+        }
+
+        // Execute count query
+        let total_count: i64 = count_query
+            .build_query_scalar()
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| ApiError::InternalError(format!("DB count tasks error: {}", e)))?;
+
+        // Build main query
+        let mut query = sqlx::QueryBuilder::new(
+            "SELECT id, title, description, slug, status, user_id, created_at, updated_at FROM tasks WHERE 1=1"
+        );
+        
+        // Add same filters to main query
+        if let Some(status) = &query_params.filters.status {
+            query.push(" AND status = ");
+            query.push_bind(status);
+        }
+        
+        if let Some(user_id) = &query_params.filters.user_id {
+            query.push(" AND user_id = ");
+            query.push_bind(user_id);
+        }
+        
+        if let Some(created_after) = &query_params.filters.created_after {
+            query.push(" AND created_at >= ");
+            query.push_bind(created_after);
+        }
+        
+        if let Some(created_before) = &query_params.filters.created_before {
+            query.push(" AND created_at <= ");
+            query.push_bind(created_before);
+        }
+        
+        if let Some(search) = &query_params.filters.search {
+            let search_pattern = format!("%{}%", search);
+            query.push(" AND (title ILIKE ");
+            query.push_bind(search_pattern.clone());
+            query.push(" OR description ILIKE ");
+            query.push_bind(search_pattern);
+            query.push(")");
+        }
+
+        // Add sorting
+        let sort_direction = if query_params.pagination.sort_direction.to_lowercase() == "desc" {
+            "DESC"
+        } else {
+            "ASC"
+        };
+        query.push(" ORDER BY ");
+        query.push(&query_params.pagination.sort_by);
+        query.push(" ");
+        query.push(sort_direction);
+
+        // Add pagination
+        query.push(" LIMIT ");
+        query.push_bind(query_params.pagination.limit as i64);
+        query.push(" OFFSET ");
+        query.push_bind(query_params.pagination.offset() as i64);
+
+        // Execute main query
+        let tasks: Vec<Task> = query
+            .build_query_as()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| ApiError::InternalError(format!("DB select tasks error: {}", e)))?;
+
+        // Create pagination metadata
+        let pagination = PaginationMeta::new(&query_params.pagination, total_count as u64);
+
+        Ok(PaginatedResponse {
+            data: tasks,
+            pagination,
+        })
     }
 }
 

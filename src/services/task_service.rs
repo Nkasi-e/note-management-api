@@ -1,7 +1,7 @@
 use uuid::Uuid;
 use tracing::{info, debug};
 
-use crate::domain::{Task, CreateTaskRequest, Result, ApiError};
+use crate::domain::{Task, CreateTaskRequest, Result, ApiError, TaskQueryParams, PaginatedResponse};
 use crate::repositories::{TaskRepository, UserRepository, CreateTaskRequestInternal};
 use crate::cache::{RedisCache, task_key, user_tasks_key, all_tasks_key};
 
@@ -107,6 +107,22 @@ impl TaskService {
 
     pub async fn get_task_count(&self) -> usize {
         self.task_repository.count().await
+    }
+
+    /// Get tasks with pagination and filtering
+    pub async fn get_tasks_paginated(&self, query_params: TaskQueryParams) -> Result<PaginatedResponse<Task>> {
+        debug!("Getting paginated tasks with filters: {:?}", query_params.filters);
+        
+        // For now, we'll skip caching for paginated results since they're more complex
+        // In production, you might want to implement more sophisticated caching strategies
+        let result = self.task_repository.find_with_pagination(&query_params).await?;
+        
+        info!("Retrieved {} tasks (page {}/{})", 
+              result.data.len(), 
+              result.pagination.page, 
+              result.pagination.total_pages);
+        
+        Ok(result)
     }
 
     fn validate_task_request(&self, request: &CreateTaskRequest) -> Result<()> {
