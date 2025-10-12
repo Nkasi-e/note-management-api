@@ -284,3 +284,46 @@ fn generate_random_suffix() -> String {
     // Convert to 4-digit string (base 36 for shorter strings)
     format!("{:04x}", (hash % 65536) as u16)
 }
+
+
+impl TaskRepository {
+    /// Find old tasks for cleanup
+    pub async fn find_old_tasks(&self, cutoff_date: &chrono::DateTime<chrono::Utc>, status: Option<&str>) -> Result<Vec<Task>> {
+        let mut query = sqlx::QueryBuilder::new("SELECT * FROM tasks WHERE created_at < ");
+        query.push_bind(cutoff_date);
+        
+        if let Some(status_filter) = status {
+            query.push(" AND status = ");
+            query.push_bind(status_filter);
+        }
+        
+        query.push(" ORDER BY created_at ASC");
+        
+        let tasks = query
+            .build_query_as::<Task>()
+            .fetch_all(&self.pool)
+            .await?;
+            
+        Ok(tasks)
+    }
+
+    /// Find tasks by date range for reports
+    pub async fn find_tasks_by_date_range(
+        &self, 
+        user_id: &uuid::Uuid, 
+        start_date: &chrono::DateTime<chrono::Utc>, 
+        end_date: &chrono::DateTime<chrono::Utc>
+    ) -> Result<Vec<Task>> {
+        let tasks = sqlx::query_as!(
+            Task,
+            "SELECT id, title, description, status as \"status: TaskStatus\", user_id, created_at, updated_at, slug FROM tasks WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3 ORDER BY created_at DESC",
+            user_id,
+            start_date,
+            end_date
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        
+        Ok(tasks)
+    }
+}

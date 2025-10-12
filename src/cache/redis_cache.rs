@@ -55,6 +55,10 @@ impl RedisCache {
         let _: () = con.del(key).await?;
         Ok(())
     }
+
+    pub async fn get_connection(&self) -> redis::RedisResult<ConnectionManager> {
+        Ok(self.manager.clone())
+    }
 }
 
 

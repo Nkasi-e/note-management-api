@@ -1,7 +1,7 @@
 use serde_json::Value;
 use std::collections::HashSet;
 
-/// Parse serde deserialization errors to provide user-friendly messages
+/// Convert serde deserialization errors into user-friendly messages
 pub fn parse_serde_error(error: &serde_json::Error) -> String {
     let error_str = error.to_string();
     

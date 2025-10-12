@@ -7,6 +7,7 @@ pub struct AppConfig {
     pub logging: LoggingConfig,
     pub auth: AuthConfig,
     pub redis: RedisConfig,
+    pub email: EmailConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +42,15 @@ pub struct AuthConfig {
 pub struct RedisConfig {
     pub url: String,
     pub ttl_secs: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailConfig {
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub username: String,
+    pub password: String,
+    pub from_email: String,
 }
 
 impl AppConfig {
@@ -89,6 +99,13 @@ impl AppConfig {
             redis: RedisConfig {
                 url: std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string()),
                 ttl_secs: std::env::var("REDIS_TTL_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(300),
+            },
+            email: EmailConfig {
+                smtp_host: std::env::var("SMTP_HOST").unwrap_or_else(|_| "smtp.gmail.com".to_string()),
+                smtp_port: std::env::var("SMTP_PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(587),
+                username: std::env::var("SMTP_USERNAME").expect("SMTP_USERNAME must be set (your Gmail address)"),
+                password: std::env::var("SMTP_PASSWORD").expect("SMTP_PASSWORD must be set (Gmail App Password)"),
+                from_email: std::env::var("FROM_EMAIL").unwrap_or_else(|_| "noreply@yourdomain.com".to_string()),
             },
         }
     }
