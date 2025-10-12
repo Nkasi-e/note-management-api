@@ -1,6 +1,8 @@
 #[cfg(feature = "s3")]
 use async_trait::async_trait;
 #[cfg(feature = "s3")]
+use bytes::Bytes;
+#[cfg(feature = "s3")]
 use aws_sdk_s3::{Client, primitives::ByteStream};
 #[cfg(feature = "s3")]
 use aws_config::meta::region::RegionProviderChain;
@@ -67,18 +69,18 @@ impl StorageProvider for S3Storage {
         &self,
         filename: &str,
         content_type: &str,
-        data: Vec<u8>,
+        data: Bytes,  // ← Zero-copy input
         user_id: Uuid,
     ) -> Result<String> {
         // Generate S3 key with user folder structure
         let key = format!("users/{}/{}", user_id, filename);
         
-        // Upload to S3
+        // Upload to S3 - ByteStream::from(Bytes) is zero-copy!
         self.client
             .put_object()
             .bucket(&self.bucket)
             .key(&key)
-            .body(ByteStream::from(data))
+            .body(ByteStream::from(data))  // ← No copy! Just reference count
             .content_type(content_type)
             .send()
             .await
@@ -89,7 +91,7 @@ impl StorageProvider for S3Storage {
         Ok(key)
     }
 
-    async fn download(&self, key: &str) -> Result<Vec<u8>> {
+    async fn download(&self, key: &str) -> Result<Bytes> {
         let response = self.client
             .get_object()
             .bucket(&self.bucket)
@@ -98,10 +100,11 @@ impl StorageProvider for S3Storage {
             .await
             .map_err(|e| ApiError::InternalError(format!("S3 download failed: {}", e)))?;
         
+        // Collect into Bytes efficiently - zero-copy from AWS SDK
         let data = response.body.collect().await
             .map_err(|e| ApiError::InternalError(format!("Failed to read S3 object: {}", e)))?;
         
-        Ok(data.into_bytes().to_vec())
+        Ok(data.into_bytes())  // ← Zero-copy conversion
     }
 
     async fn delete(&self, key: &str) -> Result<()> {

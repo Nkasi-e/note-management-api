@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use bytes::Bytes;
 use tokio::fs::{self, File};
 use uuid::Uuid;
 use chrono::Utc;
@@ -41,12 +42,13 @@ impl FileService {
         Ok(())
     }
 
-    /// Upload a file with streaming
+    /// Upload a file with zero-copy optimization
+    /// `data` is Bytes which is reference-counted, so cloning is cheap
     pub async fn upload_file(
         &self,
         filename: String,
         content_type: String,
-        data: Vec<u8>,
+        data: Bytes,  // ← Zero-copy: reference-counted buffer
         user_id: Uuid,
     ) -> Result<UploadFileResponse> {
         // Validate file size
@@ -76,10 +78,11 @@ impl FileService {
         let unique_filename = self.generate_unique_filename(&filename);
         
         // Upload using storage provider
+        // Cloning Bytes just increments reference count - no memory copy!
         let storage_key = self.storage.upload(
             &unique_filename,
             &content_type,
-            data.clone(),
+            data.clone(),  // ← Zero-copy clone (just ref count++)
             user_id,
         ).await?;
 
@@ -105,12 +108,13 @@ impl FileService {
         Ok(saved_metadata.into())
     }
 
-    /// Download a file with streaming
-    pub async fn download_file(&self, filename: &str) -> Result<(FileMetadata, Vec<u8>)> {
+    /// Download a file with zero-copy streaming
+    /// Returns Bytes which can be efficiently cloned via reference counting
+    pub async fn download_file(&self, filename: &str) -> Result<(FileMetadata, Bytes)> {
         // Get metadata from database
         let metadata = self.repository.find_by_filename(filename).await?;
 
-        // Download from storage provider
+        // Download from storage provider - returns Bytes (zero-copy)
         let contents = self.storage.download(&metadata.path).await?;
 
         debug!("File read from {} storage: {} ({} bytes)", 

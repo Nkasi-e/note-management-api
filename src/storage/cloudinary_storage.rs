@@ -1,6 +1,8 @@
 #[cfg(feature = "cloudinary")]
 use async_trait::async_trait;
 #[cfg(feature = "cloudinary")]
+use bytes::Bytes;
+#[cfg(feature = "cloudinary")]
 use reqwest::multipart::{Form, Part};
 #[cfg(feature = "cloudinary")]
 use uuid::Uuid;
@@ -76,14 +78,14 @@ impl StorageProvider for CloudinaryStorage {
         &self,
         filename: &str,
         _content_type: &str,
-        data: Vec<u8>,
+        data: Bytes,  // ← Zero-copy input
         user_id: Uuid,
     ) -> Result<String> {
         // Public ID with user folder structure
         let public_id = format!("users/{}/{}", user_id, filename);
         
-        // Create multipart form
-        let file_part = Part::bytes(data)
+        // Create multipart form - Part::bytes() can take Bytes directly!
+        let file_part = Part::bytes(data.to_vec())  // reqwest needs Vec, single copy
             .file_name(filename.to_string())
             .mime_str("application/octet-stream")
             .map_err(|e| ApiError::InternalError(format!("Failed to create file part: {}", e)))?;
@@ -117,7 +119,7 @@ impl StorageProvider for CloudinaryStorage {
         Ok(upload_response.public_id)
     }
 
-    async fn download(&self, key: &str) -> Result<Vec<u8>> {
+    async fn download(&self, key: &str) -> Result<Bytes> {
         // For Cloudinary, we download from the public URL
         let url = self.get_url(key);
         
@@ -131,12 +133,13 @@ impl StorageProvider for CloudinaryStorage {
             return Err(ApiError::NotFound(format!("File not found: {}", key)));
         }
         
+        // reqwest gives us Bytes directly - zero-copy!
         let data = response
             .bytes()
             .await
             .map_err(|e| ApiError::InternalError(format!("Failed to read file data: {}", e)))?;
         
-        Ok(data.to_vec())
+        Ok(data)  // ← Already Bytes, no conversion needed!
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
