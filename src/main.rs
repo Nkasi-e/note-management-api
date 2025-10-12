@@ -3,9 +3,10 @@ use note_task_api::{
     config::AppConfig,
     repositories::{UserRepository, TaskRepository},
     services::{UserService, TaskService, AuthService, EmailService},
-    routes::{api_v1_routes, health_routes},
+    routes::{api_v1_routes, health_routes, ws_routes},
     middleware::{logging_middleware, request_logging_middleware, json_404_middleware},
     workers::{WorkerService, JobProcessor, JobQueueConfig},
+    websocket::WebSocketManager,
     init_pg_pool,
 };
 
@@ -68,11 +69,16 @@ async fn main() {
         queue_name: "default".to_string(),
     };
     
-    let worker_service = WorkerService::new(cache.clone(), job_processor, worker_config);
+    // WebSocket manager
+    let ws_manager = WebSocketManager::new();
+    
+    let worker_service = WorkerService::new(cache.clone(), job_processor, worker_config)
+        .with_websocket(ws_manager.clone());
 
     // Router
     let app = Router::new()
         .merge(health_routes())
+        .merge(ws_routes(ws_manager.clone(), config.auth.clone()))
         .merge(api_v1_routes(user_service, task_service, auth_service, config.auth.clone(), Arc::new(worker_service.clone()), Arc::new(email_service)))
         // Middleware
         .layer(axum::middleware::from_fn(request_logging_middleware))
