@@ -9,6 +9,7 @@ use serde_json;
 use tracing::{info, warn, error, debug};
 
 use crate::cache::RedisCache;
+use crate::websocket::{WebSocketManager, WsEvent};
 use super::job_types::*;
 use super::JobProcessor;
 
@@ -18,6 +19,7 @@ pub struct WorkerService {
     job_processor: Arc<JobProcessor>,
     config: JobQueueConfig,
     is_running: Arc<RwLock<bool>>,
+    ws_manager: Option<WebSocketManager>,
 }
 
 impl WorkerService {
@@ -27,7 +29,14 @@ impl WorkerService {
             job_processor: Arc::new(job_processor),
             config,
             is_running: Arc::new(RwLock::new(false)),
+            ws_manager: None,
         }
+    }
+
+    /// Set WebSocket manager for real-time notifications
+    pub fn with_websocket(mut self, ws_manager: WebSocketManager) -> Self {
+        self.ws_manager = Some(ws_manager);
+        self
     }
 
     /// Start the worker service
@@ -101,6 +110,30 @@ impl WorkerService {
         let _: () = con.zadd(&queue_key, job_id.to_string(), priority_score).await?;
 
         info!("Enqueued job {} with priority {:?}", job_id, priority);
+        
+        // Send WebSocket notification
+        if let Some(ref ws_manager) = self.ws_manager {
+            let user_id = match &job_type {
+                JobType::SendEmail(p) => Some(p.user_id),
+                JobType::SendTaskReminder(p) => Some(p.user_id),
+                JobType::GenerateReport(p) => Some(p.user_id),
+                _ => None,
+            };
+            
+            let event = WsEvent::JobEnqueued {
+                job_id,
+                job_type: format!("{:?}", job_type),
+                priority: priority.clone(),
+                user_id,
+            };
+            
+            if let Some(uid) = user_id {
+                ws_manager.send_to_user(&uid, event).await;
+            } else {
+                ws_manager.broadcast(event).await;
+            }
+        }
+        
         Ok(job_id)
     }
 
@@ -163,6 +196,14 @@ impl WorkerService {
                 metadata.started_at = Some(Utc::now());
                 self.cache.set_json_with_ttl(&job_key, &serde_json::to_string(&metadata)?, 86400).await?;
 
+                // Send WebSocket notification for job started
+                if let Some(ref ws_manager) = self.ws_manager {
+                    ws_manager.broadcast(WsEvent::JobStarted {
+                        job_id,
+                        job_type: format!("{:?}", metadata.job_type),
+                    }).await;
+                }
+
                 // Process the job with timeout
                 let result = timeout(
                     Duration::from_secs(self.config.job_timeout_secs),
@@ -175,6 +216,14 @@ impl WorkerService {
                         metadata.status = JobStatus::Completed;
                         metadata.completed_at = Some(Utc::now());
                         info!("Job {} completed successfully", job_id);
+                        
+                        // Send WebSocket notification for job completed
+                        if let Some(ref ws_manager) = self.ws_manager {
+                            ws_manager.broadcast(WsEvent::JobCompleted {
+                                job_id,
+                                job_type: format!("{:?}", metadata.job_type),
+                            }).await;
+                        }
                     }
                     Ok(Err(e)) => {
                         // Failed
@@ -184,9 +233,29 @@ impl WorkerService {
                         if metadata.retry_count >= metadata.max_retries {
                             metadata.status = JobStatus::Failed;
                             error!("Job {} failed permanently after {} retries: {}", job_id, metadata.retry_count, e);
+                            
+                            // Send WebSocket notification for job failed
+                            if let Some(ref ws_manager) = self.ws_manager {
+                                ws_manager.broadcast(WsEvent::JobFailed {
+                                    job_id,
+                                    job_type: format!("{:?}", metadata.job_type),
+                                    error: e.to_string(),
+                                    retry_count: metadata.retry_count,
+                                }).await;
+                            }
                         } else {
                             metadata.status = JobStatus::Retrying;
                             warn!("Job {} failed, retrying ({}/{})", job_id, metadata.retry_count, metadata.max_retries);
+                            
+                            // Send WebSocket notification for job retrying
+                            if let Some(ref ws_manager) = self.ws_manager {
+                                ws_manager.broadcast(WsEvent::JobRetrying {
+                                    job_id,
+                                    job_type: format!("{:?}", metadata.job_type),
+                                    retry_count: metadata.retry_count,
+                                    max_retries: metadata.max_retries,
+                                }).await;
+                            }
                             
                             // Re-queue with delay
                             let delay_secs = self.config.retry_delay_secs * metadata.retry_count as u64;

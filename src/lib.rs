@@ -11,6 +11,7 @@ pub mod validation;
 pub mod extractors;
 pub mod cache;
 pub mod workers;
+pub mod websocket;
 
 // Re-export commonly used types for convenience
 pub use domain::error::{ApiError, Result};
