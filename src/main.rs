@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use note_task_api::{
     config::AppConfig,
-    repositories::{UserRepository, TaskRepository},
-    services::{UserService, TaskService, AuthService, EmailService},
+    repositories::{UserRepository, TaskRepository, FileRepository},
+    services::{UserService, TaskService, AuthService, EmailService, FileService},
     routes::{api_v1_routes, health_routes, ws_routes},
     middleware::{logging_middleware, request_logging_middleware, json_404_middleware},
     workers::{WorkerService, JobProcessor, JobQueueConfig},
@@ -41,6 +41,7 @@ async fn main() {
     // Repositories
     let user_repository = UserRepository::new(pool.clone());
     let task_repository = TaskRepository::new(pool.clone());
+    let file_repository = FileRepository::new(pool.clone());
     
     // Redis cache
     let redis_client = RedisClient::open(config.redis.url.clone()).expect("Invalid REDIS_URL");
@@ -49,9 +50,13 @@ async fn main() {
 
     // Services
     let user_service = UserService::new(user_repository.clone());
-    let task_service = TaskService::new(task_repository.clone(), user_repository.clone(), Some(cache.clone()));
+    let task_service = TaskService::new(task_repository.clone(), user_repository.clone(), file_repository.clone(), Some(cache.clone()));
     let auth_service = AuthService::new(user_repository.clone(), config.auth.clone());
     let email_service = EmailService::new(config.email.clone());
+    let file_service = FileService::new(file_repository, config.storage.clone());
+    
+    // Initialize file storage directory
+    file_service.init_storage().await.expect("Failed to initialize file storage");
 
     // Background worker
     let job_processor = JobProcessor::new(
@@ -79,7 +84,7 @@ async fn main() {
     let app = Router::new()
         .merge(health_routes())
         .merge(ws_routes(ws_manager.clone(), config.auth.clone()))
-        .merge(api_v1_routes(user_service, task_service, auth_service, config.auth.clone(), Arc::new(worker_service.clone()), Arc::new(email_service)))
+        .merge(api_v1_routes(user_service, task_service, auth_service, file_service, config.auth.clone(), Arc::new(worker_service.clone()), Arc::new(email_service)))
         // Middleware
         .layer(axum::middleware::from_fn(request_logging_middleware))
         .layer(logging_middleware())

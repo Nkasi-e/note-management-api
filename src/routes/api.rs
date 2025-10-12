@@ -1,17 +1,18 @@
 use axum::Router;
 use std::sync::Arc;
 
-use crate::services::{UserService, TaskService, AuthService, EmailService};
+use crate::services::{UserService, TaskService, AuthService, EmailService, FileService};
 use crate::middleware::auth_middleware;
 use crate::config::settings::AuthConfig;
 use crate::workers::WorkerService;
 
-use super::{user_routes, task_routes, auth_routes, worker_routes};
+use super::{user_routes, task_routes, auth_routes, worker_routes, file_routes};
 
 pub fn api_v1_routes(
     user_service: UserService,
     task_service: TaskService,
     auth_service: AuthService,
+    file_service: FileService,
     auth_config: AuthConfig,
     worker_service: Arc<WorkerService>,
     email_service: Arc<EmailService>,
@@ -34,7 +35,10 @@ pub fn api_v1_routes(
                     .layer(axum::middleware::from_fn_with_state(auth_config.clone(), auth_middleware))
             )
             .nest("/workers", 
-                worker_routes(worker_service, auth_config)
+                worker_routes(worker_service, auth_config.clone())
+            )
+            .nest("/files",
+                file_routes(file_service, auth_config)
             )
         )
 }

@@ -23,9 +23,17 @@ pub struct Task {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskWithAttachments {
+    #[serde(flatten)]
+    pub task: Task,
+    pub attachment_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateTaskRequest {
     pub title: String,
     pub description: Option<String>,
+    pub attachment_ids: Option<Vec<Uuid>>,
 }
 
 impl Task {

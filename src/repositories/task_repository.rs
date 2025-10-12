@@ -326,4 +326,46 @@ impl TaskRepository {
         
         Ok(tasks)
     }
+
+    /// Add attachments to a task
+    pub async fn add_attachments(&self, task_id: Uuid, file_ids: Vec<Uuid>) -> Result<()> {
+        for file_id in file_ids {
+            sqlx::query!(
+                "INSERT INTO task_attachments (task_id, file_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                task_id,
+                file_id
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Failed to add attachment: {}", e)))?;
+        }
+        Ok(())
+    }
+
+    /// Get all file IDs attached to a task
+    pub async fn get_task_attachments(&self, task_id: Uuid) -> Result<Vec<Uuid>> {
+        let file_ids = sqlx::query_scalar!(
+            "SELECT file_id FROM task_attachments WHERE task_id = $1",
+            task_id
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| ApiError::InternalError(format!("Failed to get attachments: {}", e)))?;
+        
+        Ok(file_ids)
+    }
+
+    /// Remove an attachment from a task
+    pub async fn remove_attachment(&self, task_id: Uuid, file_id: Uuid) -> Result<()> {
+        sqlx::query!(
+            "DELETE FROM task_attachments WHERE task_id = $1 AND file_id = $2",
+            task_id,
+            file_id
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| ApiError::InternalError(format!("Failed to remove attachment: {}", e)))?;
+        
+        Ok(())
+    }
 }

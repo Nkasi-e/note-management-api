@@ -4,15 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axum = { version = "0.7", features = ["ws"] }
+axum = { version = "0.7", features = ["ws", "multipart"] }
 tokio = { version = "1.0", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenvy = "0.15"
@@ -24,3 +25,6 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres",
 redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
 lettre = { version = "0.11", features = ["tokio1", "smtp-transport", "tokio1-native-tls", "builder"], default-features = false }
 futures = "0.3"
+mime = "0.3"
+mime_guess = "2.0"
+bytes = "1.0"

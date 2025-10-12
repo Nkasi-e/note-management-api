@@ -8,6 +8,7 @@ pub struct AppConfig {
     pub auth: AuthConfig,
     pub redis: RedisConfig,
     pub email: EmailConfig,
+    pub storage: StorageConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,6 +52,14 @@ pub struct EmailConfig {
     pub username: String,
     pub password: String,
     pub from_email: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageConfig {
+    pub upload_dir: String,
+    pub max_file_size: usize,        // in bytes
+    pub allowed_extensions: Vec<String>,
+    pub serve_files: bool,
 }
 
 impl AppConfig {
@@ -106,6 +115,22 @@ impl AppConfig {
                 username: std::env::var("SMTP_USERNAME").expect("SMTP_USERNAME must be set (your Gmail address)"),
                 password: std::env::var("SMTP_PASSWORD").expect("SMTP_PASSWORD must be set (Gmail App Password)"),
                 from_email: std::env::var("FROM_EMAIL").unwrap_or_else(|_| "noreply@yourdomain.com".to_string()),
+            },
+            storage: StorageConfig {
+                upload_dir: std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "./uploads".to_string()),
+                max_file_size: std::env::var("MAX_FILE_SIZE")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(10 * 1024 * 1024), // 10MB default
+                allowed_extensions: std::env::var("ALLOWED_EXTENSIONS")
+                    .unwrap_or_else(|_| "jpg,jpeg,png,gif,pdf,doc,docx,txt,zip".to_string())
+                    .split(',')
+                    .map(|s| s.trim().to_lowercase())
+                    .collect(),
+                serve_files: std::env::var("SERVE_FILES")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(true),
             },
         }
     }
