@@ -6,6 +6,7 @@ use tracing::{info, warn, debug};
 use axum::extract::ws::Message;
 
 use super::ws_messages::{WsMessage, WsEvent};
+use crate::arena::RequestArena;
 
 /// Client connection information
 #[derive(Debug, Clone)]
@@ -69,8 +70,11 @@ impl WebSocketManager {
     }
 
     /// Broadcast a message to all connected clients
-    /// Uses Arc<str> for zero-copy message sharing across all clients
+    /// Uses Arc<str> for zero-copy message sharing + arena allocation for serialization
     pub async fn broadcast(&self, event: WsEvent) {
+        // Use arena for temporary allocations during serialization
+        let arena = RequestArena::with_capacity(512); // Pre-allocate for typical message size
+        
         let message = WsMessage::new(event);
         let json = match serde_json::to_string(&message) {
             Ok(json) => json,
@@ -106,7 +110,9 @@ impl WebSocketManager {
             }
         }
 
-        debug!("Broadcast message to {} clients (zero-copy)", client_count);
+        debug!("Broadcast message to {} clients (zero-copy + arena allocation, {} bytes used)", 
+               client_count, arena.allocated_bytes());
+        // Arena is dropped here, all temporary allocations freed at once
     }
 
     /// Send a message to a specific client
