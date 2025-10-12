@@ -13,6 +13,7 @@ pub mod cloudinary_storage;
 pub mod azure_storage;
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use uuid::Uuid;
 use crate::domain::{Result, ApiError};
 use local_storage::LocalStorage;
@@ -30,19 +31,22 @@ use cloudinary_storage::CloudinaryStorage;
 use azure_storage::AzureStorage;
 
 /// Storage provider trait - abstraction for all storage backends
+/// Uses `Bytes` for zero-copy performance
 #[async_trait]
 pub trait StorageProvider: Send + Sync {
     /// Upload a file and return the storage key/path
+    /// Uses Bytes for zero-copy - just increments reference count instead of copying data
     async fn upload(
         &self,
         filename: &str,
         content_type: &str,
-        data: Vec<u8>,
+        data: Bytes,  // ← Zero-copy: reference-counted buffer
         user_id: Uuid,
     ) -> Result<String>;
 
     /// Download a file by its key/path
-    async fn download(&self, key: &str) -> Result<Vec<u8>>;
+    /// Returns Bytes for zero-copy streaming
+    async fn download(&self, key: &str) -> Result<Bytes>;  // ← Zero-copy output
 
     /// Delete a file by its key/path
     async fn delete(&self, key: &str) -> Result<()>;

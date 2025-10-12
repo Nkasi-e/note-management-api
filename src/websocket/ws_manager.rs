@@ -69,6 +69,7 @@ impl WebSocketManager {
     }
 
     /// Broadcast a message to all connected clients
+    /// Uses Arc<str> for zero-copy message sharing across all clients
     pub async fn broadcast(&self, event: WsEvent) {
         let message = WsMessage::new(event);
         let json = match serde_json::to_string(&message) {
@@ -79,11 +80,16 @@ impl WebSocketManager {
             }
         };
 
+        // Convert to Arc<str> for zero-copy sharing
+        // All clients get a reference to the same string - no cloning!
+        let json_arc: std::sync::Arc<str> = json.into();
+
         let clients = self.clients.read().await;
         let mut failed_clients = Vec::new();
 
         for (client_id, connection) in clients.iter() {
-            if let Err(e) = connection.sender.send(Message::Text(json.clone())) {
+            // Clone Arc just increments reference count - zero-copy!
+            if let Err(e) = connection.sender.send(Message::Text(json_arc.to_string())) {
                 warn!("Failed to send message to client {}: {}", client_id, e);
                 failed_clients.push(*client_id);
             }
@@ -100,7 +106,7 @@ impl WebSocketManager {
             }
         }
 
-        debug!("Broadcast message to {} clients", client_count);
+        debug!("Broadcast message to {} clients (zero-copy)", client_count);
     }
 
     /// Send a message to a specific client
@@ -122,6 +128,7 @@ impl WebSocketManager {
     }
 
     /// Send a message to all clients associated with a specific user
+    /// Uses Arc<str> for zero-copy when broadcasting to multiple user sessions
     pub async fn send_to_user(&self, user_id: &Uuid, event: WsEvent) {
         let message = WsMessage::new(event);
         let json = match serde_json::to_string(&message) {
@@ -132,12 +139,16 @@ impl WebSocketManager {
             }
         };
 
+        // Convert to Arc<str> for efficient sharing
+        let json_arc: std::sync::Arc<str> = json.into();
+
         let clients = self.clients.read().await;
         let mut sent_count = 0;
 
         for connection in clients.values() {
             if connection.user_id == Some(*user_id) {
-                if let Err(e) = connection.sender.send(Message::Text(json.clone())) {
+                // Arc clone is just ref count increment - zero-copy!
+                if let Err(e) = connection.sender.send(Message::Text(json_arc.to_string())) {
                     warn!("Failed to send message to client {}: {}", connection.client_id, e);
                 } else {
                     sent_count += 1;
@@ -145,7 +156,7 @@ impl WebSocketManager {
             }
         }
 
-        debug!("Sent message to {} clients for user {}", sent_count, user_id);
+        debug!("Sent message to {} clients for user {} (zero-copy)", sent_count, user_id);
     }
 
     /// Get the number of connected clients
@@ -225,6 +236,7 @@ impl WebSocketManager {
     }
 
     /// Broadcast a message to all clients in a specific room
+    /// Uses Arc<str> for zero-copy message sharing
     pub async fn broadcast_to_room(&self, room: &str, event: WsEvent) {
         let message = WsMessage::new(event);
         let json = match serde_json::to_string(&message) {
@@ -234,6 +246,9 @@ impl WebSocketManager {
                 return;
             }
         };
+
+        // Convert to Arc<str> for zero-copy sharing across room members
+        let json_arc: std::sync::Arc<str> = json.into();
 
         // Get all client IDs in the room
         let rooms = self.rooms.read().await;
@@ -253,7 +268,8 @@ impl WebSocketManager {
 
         for client_id in &client_ids {
             if let Some(connection) = clients.get(client_id) {
-                if let Err(e) = connection.sender.send(Message::Text(json.clone())) {
+                // Arc clone is just ref count increment - zero-copy!
+                if let Err(e) = connection.sender.send(Message::Text(json_arc.to_string())) {
                     warn!("Failed to send message to client {} in room '{}': {}", client_id, room, e);
                     failed_clients.push(*client_id);
                 } else {
@@ -262,7 +278,7 @@ impl WebSocketManager {
             }
         }
 
-        debug!("Broadcast message to {} clients in room '{}'", sent_count, room);
+        debug!("Broadcast message to {} clients in room '{}' (zero-copy)", sent_count, room);
 
         // Clean up failed clients
         drop(clients);

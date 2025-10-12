@@ -1,6 +1,8 @@
 #[cfg(feature = "gcs")]
 use async_trait::async_trait;
 #[cfg(feature = "gcs")]
+use bytes::Bytes;
+#[cfg(feature = "gcs")]
 use google_cloud_storage::client::{Client, ClientConfig};
 #[cfg(feature = "gcs")]
 use google_cloud_storage::http::objects::upload::{UploadObjectRequest, UploadType, Media};
@@ -49,7 +51,7 @@ impl StorageProvider for GcsStorage {
         &self,
         filename: &str,
         content_type: &str,
-        data: Vec<u8>,
+        data: Bytes,  // ← Zero-copy input
         user_id: Uuid,
     ) -> Result<String> {
         let key = format!("users/{}/{}", user_id, filename);
@@ -65,8 +67,9 @@ impl StorageProvider for GcsStorage {
             ..Default::default()
         };
         
+        // Convert Bytes to Vec for GCS SDK (single copy, unavoidable with this SDK)
         self.client
-            .upload_object(&request, data, &upload_type)
+            .upload_object(&request, data.to_vec(), &upload_type)
             .await
             .map_err(|e| ApiError::InternalError(format!("GCS upload failed: {}", e)))?;
         
@@ -75,7 +78,7 @@ impl StorageProvider for GcsStorage {
         Ok(key)
     }
 
-    async fn download(&self, key: &str) -> Result<Vec<u8>> {
+    async fn download(&self, key: &str) -> Result<Bytes> {
         let request = GetObjectRequest {
             bucket: self.bucket.clone(),
             object: key.to_string(),
@@ -87,7 +90,8 @@ impl StorageProvider for GcsStorage {
             .await
             .map_err(|e| ApiError::InternalError(format!("GCS download failed: {}", e)))?;
         
-        Ok(data)
+        // Convert Vec to Bytes (cheap wrap operation)
+        Ok(Bytes::from(data))
     }
 
     async fn delete(&self, key: &str) -> Result<()> {

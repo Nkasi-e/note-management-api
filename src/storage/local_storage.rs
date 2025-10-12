@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use bytes::Bytes;
 use uuid::Uuid;
 use crate::domain::{Result, ApiError};
 use super::StorageProvider;
@@ -29,7 +30,7 @@ impl StorageProvider for LocalStorage {
         &self,
         filename: &str,
         _content_type: &str,
-        data: Vec<u8>,
+        data: Bytes,  // ← Zero-copy input
         user_id: Uuid,
     ) -> Result<String> {
         // Create user directory
@@ -41,8 +42,8 @@ impl StorageProvider for LocalStorage {
         // Full path
         let path = format!("{}/{}", user_dir, filename);
         
-        // Write file
-        tokio::fs::write(&path, data)
+        // Write file directly from Bytes (no copy needed!)
+        tokio::fs::write(&path, &data)
             .await
             .map_err(|e| ApiError::InternalError(format!("Failed to write file: {}", e)))?;
 
@@ -50,12 +51,16 @@ impl StorageProvider for LocalStorage {
         Ok(format!("{}/{}", user_id, filename))
     }
 
-    async fn download(&self, key: &str) -> Result<Vec<u8>> {
+    async fn download(&self, key: &str) -> Result<Bytes> {
         let path = format!("{}/{}", self.upload_dir, key);
         
-        tokio::fs::read(&path)
+        // Read into Vec<u8> then convert to Bytes (single allocation)
+        let data = tokio::fs::read(&path)
             .await
-            .map_err(|e| ApiError::InternalError(format!("Failed to read file: {}", e)))
+            .map_err(|e| ApiError::InternalError(format!("Failed to read file: {}", e)))?;
+        
+        // Convert to Bytes - this is cheap, just wraps the Vec
+        Ok(Bytes::from(data))
     }
 
     async fn delete(&self, key: &str) -> Result<()> {

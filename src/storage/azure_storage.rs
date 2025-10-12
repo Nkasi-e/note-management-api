@@ -1,6 +1,8 @@
 #[cfg(feature = "azure")]
 use async_trait::async_trait;
 #[cfg(feature = "azure")]
+use bytes::Bytes;
+#[cfg(feature = "azure")]
 use azure_storage::StorageCredentials;
 #[cfg(feature = "azure")]
 use azure_storage_blobs::prelude::*;
@@ -47,15 +49,16 @@ impl StorageProvider for AzureStorage {
         &self,
         filename: &str,
         content_type: &str,
-        data: Vec<u8>,
+        data: Bytes,  // ← Zero-copy input
         user_id: Uuid,
     ) -> Result<String> {
         let blob_name = format!("users/{}/{}", user_id, filename);
         
         let blob_client = self.container_client.blob_client(&blob_name);
         
+        // Azure SDK needs Vec, so convert (single copy)
         blob_client
-            .put_block_blob(data)
+            .put_block_blob(data.to_vec())
             .content_type(content_type)
             .execute()
             .await
@@ -66,7 +69,7 @@ impl StorageProvider for AzureStorage {
         Ok(blob_name)
     }
 
-    async fn download(&self, key: &str) -> Result<Vec<u8>> {
+    async fn download(&self, key: &str) -> Result<Bytes> {
         let blob_client = self.container_client.blob_client(key);
         
         let mut stream = blob_client
@@ -83,7 +86,8 @@ impl StorageProvider for AzureStorage {
             data.extend_from_slice(&chunk.data);
         }
         
-        Ok(data)
+        // Convert to Bytes (cheap wrap)
+        Ok(Bytes::from(data))
     }
 
     async fn delete(&self, key: &str) -> Result<()> {

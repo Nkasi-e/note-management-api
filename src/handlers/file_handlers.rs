@@ -4,7 +4,6 @@ use axum::{
     http::{header, StatusCode},
     body::Body,
 };
-use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 use tracing::info;
 
@@ -36,11 +35,12 @@ pub async fn upload_file(
                 filename = field.file_name().map(|s| s.to_string());
                 content_type = field.content_type().map(|s| s.to_string());
                 
+                // field.bytes() returns Bytes directly - zero-copy!
                 let data = field.bytes().await.map_err(|e| {
                     ApiError::bad_request(format!("Failed to read file data: {}", e))
                 })?;
                 
-                file_data = Some(data.to_vec());
+                file_data = Some(data);  // ← Now storing Bytes, not Vec<u8>
             }
             _ => {
                 // Ignore unknown fields
@@ -82,7 +82,8 @@ pub async fn upload_file(
     })))
 }
 
-/// Download a file
+/// Download a file with zero-copy streaming
+/// Uses Bytes for efficient memory handling
 pub async fn download_file(
     State(file_service): State<FileService>,
     Extension(current_user): Extension<CurrentUser>,
@@ -98,14 +99,13 @@ pub async fn download_file(
         return Err(ApiError::Forbidden("You don't have permission to access this file".to_string()));
     }
 
-    // Get file stream
-    let (metadata, file) = file_service
-        .get_file_stream(&metadata.filename)
+    // Download file - returns Bytes (zero-copy!)
+    let (metadata, file_data) = file_service
+        .download_file(&metadata.filename)
         .await?;
 
-    // Convert the async read stream to a body
-    let stream = ReaderStream::new(file);
-    let body = Body::from_stream(stream);
+    // Create body from Bytes - no copy, just reference count increment
+    let body = Body::from(file_data);
 
     // Build response with appropriate headers
     let response = Response::builder()

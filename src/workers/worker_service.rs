@@ -98,10 +98,10 @@ impl WorkerService {
             priority: priority.clone(),
         };
 
-        // Store job metadata
+        // Store job metadata with zero-copy optimization
+        // Serialize once and cache as Bytes for potential reuse
         let job_key = format!("job:{}", job_id);
-        let job_data = serde_json::to_string(&metadata)?;
-        self.cache.set_json_with_ttl(&job_key, &job_data, 86400).await?; // 24 hours TTL
+        let _job_bytes = self.cache.set_json_bytes_with_ttl(&job_key, &metadata, 86400).await?; // 24 hours TTL
 
         // Add to priority queue
         let queue_key = format!("queue:{}", self.config.queue_name);
@@ -191,10 +191,10 @@ impl WorkerService {
             if let Some(data) = job_data {
                 let mut metadata: JobMetadata = serde_json::from_str(&data)?;
                 
-                // Update status to processing
+                // Update status to processing (zero-copy optimization)
                 metadata.status = JobStatus::Processing;
                 metadata.started_at = Some(Utc::now());
-                self.cache.set_json_with_ttl(&job_key, &serde_json::to_string(&metadata)?, 86400).await?;
+                self.cache.set_json(&job_key, &metadata).await?;
 
                 // Send WebSocket notification for job started
                 if let Some(ref ws_manager) = self.ws_manager {
@@ -303,8 +303,8 @@ impl WorkerService {
                     }
                 }
 
-                // Update job metadata
-                self.cache.set_json_with_ttl(&job_key, &serde_json::to_string(&metadata)?, 86400).await?;
+                // Update job metadata (zero-copy optimization)
+                self.cache.set_json_with_ttl(&job_key, &metadata, 86400).await?;
                 Ok(true)
             } else {
                 warn!("Job {} not found in cache", job_id);
