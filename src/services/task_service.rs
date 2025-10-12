@@ -2,21 +2,23 @@ use uuid::Uuid;
 use tracing::{info, debug};
 
 use crate::domain::{Task, CreateTaskRequest, Result, ApiError, TaskQueryParams, PaginatedResponse};
-use crate::repositories::{TaskRepository, UserRepository, CreateTaskRequestInternal};
+use crate::repositories::{TaskRepository, UserRepository, CreateTaskRequestInternal, FileRepository};
 use crate::cache::{RedisCache, task_key, user_tasks_key, all_tasks_key};
 
 #[derive(Debug, Clone)]
 pub struct TaskService {
     task_repository: TaskRepository,
     user_repository: UserRepository,
+    file_repository: FileRepository,
     cache: Option<RedisCache>,
 }
 
 impl TaskService {
-    pub fn new(task_repository: TaskRepository, user_repository: UserRepository, cache: Option<RedisCache>) -> Self {
+    pub fn new(task_repository: TaskRepository, user_repository: UserRepository, file_repository: FileRepository, cache: Option<RedisCache>) -> Self {
         Self {
             task_repository,
             user_repository,
+            file_repository,
             cache,
         }
     }
@@ -32,6 +34,19 @@ impl TaskService {
             });
         }
 
+        // Validate file ownership if attachments are provided
+        if let Some(ref attachment_ids) = request.attachment_ids {
+            for file_id in attachment_ids {
+                let is_owner = self.file_repository.is_owner(*file_id, user_id).await?;
+                if !is_owner {
+                    return Err(ApiError::Forbidden(
+                        format!("You don't own file with ID: {}", file_id)
+                    ));
+                }
+            }
+            info!("Validated ownership of {} file(s) for user {}", attachment_ids.len(), user_id);
+        }
+
         // Create internal request with user_id
         let internal_request = CreateTaskRequestInternal {
             title: request.title,
@@ -41,6 +56,15 @@ impl TaskService {
 
         // Delegate to repository
         let task = self.task_repository.create(internal_request).await?;
+
+        // Add multiple attachments if provided
+        if let Some(attachment_ids) = request.attachment_ids {
+            if !attachment_ids.is_empty() {
+                let count = attachment_ids.len();
+                self.task_repository.add_attachments(task.id, attachment_ids).await?;
+                info!("Linked {} file(s) to task {}", count, task.id);
+            }
+        }
 
         // Invalidate caches related to tasks
         if let Some(cache) = &self.cache {

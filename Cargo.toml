@@ -4,15 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axum = { version = "0.7", features = ["ws"] }
+axum = { version = "0.7", features = ["ws", "multipart"] }
 tokio = { version = "1.0", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenvy = "0.15"
@@ -24,3 +25,30 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres",
 redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
 lettre = { version = "0.11", features = ["tokio1", "smtp-transport", "tokio1-native-tls", "builder"], default-features = false }
 futures = "0.3"
+mime = "0.3"
+mime_guess = "2.0"
+bytes = "1.0"
+async-trait = "0.1"
+
+# AWS S3 (optional - only needed if using S3 backend)
+aws-sdk-s3 = { version = "1.9", optional = true }
+aws-config = { version = "1.1", optional = true }
+
+# GCP Cloud Storage (optional - only needed if using GCS backend)
+google-cloud-storage = { version = "0.22", optional = true }
+
+# Cloudinary (optional - only needed if using Cloudinary backend)
+reqwest = { version = "0.12", features = ["json", "multipart"], optional = true }
+sha1 = { version = "0.10", optional = true }
+
+# Azure Blob Storage (optional - only needed if using Azure backend)
+azure_storage = { version = "0.20", optional = true }
+azure_storage_blobs = { version = "0.20", optional = true }
+
+[features]
+default = []
+s3 = ["aws-sdk-s3", "aws-config"]
+gcs = ["google-cloud-storage"]
+cloudinary = ["reqwest", "sha1"]
+azure = ["azure_storage", "azure_storage_blobs"]
+all_storage = ["s3", "gcs", "cloudinary", "azure"]
