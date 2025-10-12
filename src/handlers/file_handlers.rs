@@ -178,3 +178,30 @@ pub async fn get_user_stats(
 
     Ok(respond_ok(stats))
 }
+
+/// Generate a presigned URL for temporary file access
+/// Useful for:
+/// - Sharing private files securely
+/// - Direct browser uploads/downloads
+/// - Granting time-limited access to external services
+pub async fn generate_presigned_url(
+    Path(file_id): Path<Uuid>,
+    State(file_service): State<FileService>,
+    Extension(current_user): Extension<CurrentUser>,
+) -> Result<impl IntoResponse> {
+    info!("User {} generating presigned URL for file {}", current_user.id, file_id);
+
+    // Default expiration: 1 hour (3600 seconds)
+    // In production, you might want to accept this as a query parameter
+    let expires_in = std::time::Duration::from_secs(3600);
+
+    let presigned_url = file_service
+        .generate_presigned_url(file_id, current_user.id, expires_in)
+        .await?;
+
+    Ok(respond_ok(serde_json::json!({
+        "url": presigned_url,
+        "expires_in_seconds": expires_in.as_secs(),
+        "expires_at": chrono::Utc::now() + chrono::Duration::seconds(expires_in.as_secs() as i64),
+    })))
+}

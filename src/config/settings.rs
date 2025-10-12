@@ -56,10 +56,31 @@ pub struct EmailConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageConfig {
+    pub backend: String,             // "local", "s3", "gcs", "cloudinary"
     pub upload_dir: String,
     pub max_file_size: usize,        // in bytes
     pub allowed_extensions: Vec<String>,
     pub serve_files: bool,
+    
+    // AWS S3
+    pub aws_region: Option<String>,
+    pub aws_bucket: Option<String>,
+    pub aws_cdn_url: Option<String>,
+    
+    // GCP Cloud Storage
+    pub gcs_bucket: Option<String>,
+    pub gcs_cdn_url: Option<String>,
+    
+    // Cloudinary
+    pub cloudinary_cloud_name: Option<String>,
+    pub cloudinary_api_key: Option<String>,
+    pub cloudinary_api_secret: Option<String>,
+    
+    // Azure Blob Storage
+    pub azure_account_name: Option<String>,
+    pub azure_account_key: Option<String>,
+    pub azure_container: Option<String>,
+    pub azure_cdn_url: Option<String>,
 }
 
 impl AppConfig {
@@ -117,6 +138,7 @@ impl AppConfig {
                 from_email: std::env::var("FROM_EMAIL").unwrap_or_else(|_| "noreply@yourdomain.com".to_string()),
             },
             storage: StorageConfig {
+                backend: std::env::var("STORAGE_BACKEND").unwrap_or_else(|_| "local".to_string()),
                 upload_dir: std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "./uploads".to_string()),
                 max_file_size: std::env::var("MAX_FILE_SIZE")
                     .ok()
@@ -131,6 +153,26 @@ impl AppConfig {
                     .ok()
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(true),
+                
+                // AWS S3
+                aws_region: std::env::var("AWS_REGION").ok(),
+                aws_bucket: std::env::var("AWS_S3_BUCKET").ok(),
+                aws_cdn_url: std::env::var("AWS_CDN_URL").ok(),
+                
+                // GCP Cloud Storage
+                gcs_bucket: std::env::var("GCP_BUCKET").ok(),
+                gcs_cdn_url: std::env::var("GCP_CDN_URL").ok(),
+                
+                // Cloudinary
+                cloudinary_cloud_name: std::env::var("CLOUDINARY_CLOUD_NAME").ok(),
+                cloudinary_api_key: std::env::var("CLOUDINARY_API_KEY").ok(),
+                cloudinary_api_secret: std::env::var("CLOUDINARY_API_SECRET").ok(),
+                
+                // Azure Blob Storage
+                azure_account_name: std::env::var("AZURE_ACCOUNT_NAME").ok(),
+                azure_account_key: std::env::var("AZURE_ACCOUNT_KEY").ok(),
+                azure_container: std::env::var("AZURE_CONTAINER").ok(),
+                azure_cdn_url: std::env::var("AZURE_CDN_URL").ok(),
             },
         }
     }

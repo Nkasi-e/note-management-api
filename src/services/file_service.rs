@@ -1,23 +1,30 @@
 use std::path::{Path, PathBuf};
 use tokio::fs::{self, File};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 use chrono::Utc;
-use tracing::{info, error, debug};
+use tracing::{info, debug};
+use std::sync::Arc;
 
 use crate::config::settings::StorageConfig;
 use crate::domain::{ApiError, Result, FileMetadata, UploadFileResponse, FileStats};
 use crate::repositories::FileRepository;
+use crate::storage::{StorageProvider, StorageFactory};
 
 #[derive(Clone)]
 pub struct FileService {
     repository: FileRepository,
     config: StorageConfig,
+    storage: Arc<Box<dyn StorageProvider>>,
 }
 
 impl FileService {
-    pub fn new(repository: FileRepository, config: StorageConfig) -> Self {
-        Self { repository, config }
+    pub async fn new(repository: FileRepository, config: StorageConfig) -> Result<Self> {
+        let storage = StorageFactory::create(&config).await?;
+        Ok(Self { 
+            repository, 
+            config,
+            storage: Arc::new(storage),
+        })
     }
 
     /// Initialize storage directory
@@ -67,22 +74,16 @@ impl FileService {
 
         // Generate unique filename
         let unique_filename = self.generate_unique_filename(&filename);
-        let file_path = self.get_file_path(&unique_filename);
+        
+        // Upload using storage provider
+        let storage_key = self.storage.upload(
+            &unique_filename,
+            &content_type,
+            data.clone(),
+            user_id,
+        ).await?;
 
-        // Write file to disk using tokio::fs
-        let mut file = File::create(&file_path)
-            .await
-            .map_err(|e| ApiError::InternalError(format!("Failed to create file: {}", e)))?;
-
-        file.write_all(&data)
-            .await
-            .map_err(|e| ApiError::InternalError(format!("Failed to write file: {}", e)))?;
-
-        file.flush()
-            .await
-            .map_err(|e| ApiError::InternalError(format!("Failed to flush file: {}", e)))?;
-
-        info!("File written to disk: {}", file_path.display());
+        info!("File uploaded to {} storage: {}", self.storage.backend_name(), storage_key);
 
         // Save metadata to database
         let metadata = FileMetadata {
@@ -91,7 +92,7 @@ impl FileService {
             original_filename: filename,
             content_type,
             size: data.len() as i64,
-            path: file_path.to_string_lossy().to_string(),
+            path: storage_key, // Store storage key (local path or S3 key)
             uploaded_by: user_id,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -109,24 +110,11 @@ impl FileService {
         // Get metadata from database
         let metadata = self.repository.find_by_filename(filename).await?;
 
-        // Read file from disk using tokio::fs
-        let file_path = Path::new(&metadata.path);
-        
-        if !file_path.exists() {
-            error!("File not found on disk: {}", file_path.display());
-            return Err(ApiError::NotFound(format!("File {} not found on disk", filename)));
-        }
+        // Download from storage provider
+        let contents = self.storage.download(&metadata.path).await?;
 
-        let mut file = File::open(file_path)
-            .await
-            .map_err(|e| ApiError::InternalError(format!("Failed to open file: {}", e)))?;
-
-        let mut contents = Vec::new();
-        file.read_to_end(&mut contents)
-            .await
-            .map_err(|e| ApiError::InternalError(format!("Failed to read file: {}", e)))?;
-
-        debug!("File read from disk: {} ({} bytes)", filename, contents.len());
+        debug!("File read from {} storage: {} ({} bytes)", 
+               self.storage.backend_name(), filename, contents.len());
 
         Ok((metadata, contents))
     }
@@ -161,14 +149,9 @@ impl FileService {
         // Get metadata
         let metadata = self.repository.find_by_id(file_id).await?;
 
-        // Delete from disk
-        let file_path = Path::new(&metadata.path);
-        if file_path.exists() {
-            fs::remove_file(file_path)
-                .await
-                .map_err(|e| ApiError::InternalError(format!("Failed to delete file: {}", e)))?;
-            info!("File deleted from disk: {}", file_path.display());
-        }
+        // Delete from storage provider
+        self.storage.delete(&metadata.path).await?;
+        info!("File deleted from {} storage: {}", self.storage.backend_name(), metadata.path);
 
         // Delete from database
         self.repository.delete(file_id).await?;
@@ -192,6 +175,49 @@ impl FileService {
     /// Get file metadata by ID
     pub async fn get_file_metadata(&self, file_id: Uuid) -> Result<FileMetadata> {
         self.repository.find_by_id(file_id).await
+    }
+
+    /// Generate a presigned URL for temporary file access
+    /// This is useful for:
+    /// - Sharing private files securely
+    /// - Direct browser uploads/downloads without going through your server
+    /// - Granting time-limited access to external services
+    pub async fn generate_presigned_url(
+        &self,
+        file_id: Uuid,
+        user_id: Uuid,
+        expires_in: std::time::Duration,
+    ) -> Result<String> {
+        // Verify file ownership
+        let is_owner = self.repository.is_owner(file_id, user_id).await?;
+        if !is_owner {
+            return Err(ApiError::Forbidden(
+                "You don't have permission to access this file".to_string()
+            ));
+        }
+
+        // Get file metadata
+        let metadata = self.repository.find_by_id(file_id).await?;
+
+        // For local storage, return the download URL with file_id
+        if self.storage.backend_name() == "local" {
+            let url = format!("/api/v1/files/{}/download", file_id);
+            info!("Generated local download URL for file {}", file_id);
+            return Ok(url);
+        }
+
+        // For cloud storage, generate presigned URL using the storage provider
+        let presigned_url = self.storage
+            .generate_presigned_url(&metadata.path, expires_in)
+            .await?;
+
+        info!(
+            "Generated presigned URL for file {} (expires in {} seconds)",
+            file_id,
+            expires_in.as_secs()
+        );
+
+        Ok(presigned_url)
     }
 
     /// Generate unique filename with UUID prefix

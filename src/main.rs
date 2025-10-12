@@ -53,9 +53,11 @@ async fn main() {
     let task_service = TaskService::new(task_repository.clone(), user_repository.clone(), file_repository.clone(), Some(cache.clone()));
     let auth_service = AuthService::new(user_repository.clone(), config.auth.clone());
     let email_service = EmailService::new(config.email.clone());
-    let file_service = FileService::new(file_repository, config.storage.clone());
+    let file_service = FileService::new(file_repository, config.storage.clone())
+        .await
+        .expect("Failed to initialize file service");
     
-    // Initialize file storage directory
+    // Initialize file storage directory (for local storage)
     file_service.init_storage().await.expect("Failed to initialize file storage");
 
     // Background worker
