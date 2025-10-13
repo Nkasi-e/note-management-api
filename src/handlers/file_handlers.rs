@@ -13,6 +13,30 @@ use crate::middleware::CurrentUser;
 use super::{respond_ok, respond_created};
 
 /// Upload a file
+///
+/// Uploads a file to the configured storage backend (local, S3, GCS, Azure, or Cloudinary).
+/// The file is stored with a unique filename and associated with the authenticated user.
+/// Maximum file size: 10MB (configurable).
+#[utoipa::path(
+    post,
+    path = "/api/v1/files/upload",
+    tag = "files",
+    request_body(
+        content = inline(String),
+        content_type = "multipart/form-data",
+        description = "File to upload"
+    ),
+    responses(
+        (status = 201, description = "File uploaded successfully", body = inline(serde_json::Value)),
+        (status = 400, description = "Invalid file or missing data", body = ApiErrorResponse),
+        (status = 413, description = "File too large", body = ApiErrorResponse),
+        (status = 401, description = "Unauthorized", body = ApiErrorResponse),
+        (status = 500, description = "Storage error", body = ApiErrorResponse),
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn upload_file(
     State(file_service): State<FileService>,
     Extension(current_user): Extension<CurrentUser>,
@@ -82,8 +106,28 @@ pub async fn upload_file(
     })))
 }
 
-/// Download a file with zero-copy streaming
-/// Uses Bytes for efficient memory handling
+/// Download a file
+///
+/// Downloads a file by its ID. Uses zero-copy streaming for efficient memory handling.
+/// Only the file owner can download their files. Returns the file with appropriate
+/// Content-Type and Content-Disposition headers.
+#[utoipa::path(
+    get,
+    path = "/api/v1/files/{id}/download",
+    tag = "files",
+    params(
+        ("id" = Uuid, Path, description = "File ID")
+    ),
+    responses(
+        (status = 200, description = "File downloaded successfully", content_type = "application/octet-stream"),
+        (status = 404, description = "File not found", body = ApiErrorResponse),
+        (status = 403, description = "Forbidden - not your file", body = ApiErrorResponse),
+        (status = 401, description = "Unauthorized", body = ApiErrorResponse),
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn download_file(
     State(file_service): State<FileService>,
     Extension(current_user): Extension<CurrentUser>,
@@ -123,6 +167,26 @@ pub async fn download_file(
 }
 
 /// Delete a file
+///
+/// Deletes a file by its ID. Only the file owner can delete their files.
+/// This removes both the database record and the file from storage.
+#[utoipa::path(
+    delete,
+    path = "/api/v1/files/{id}",
+    tag = "files",
+    params(
+        ("id" = Uuid, Path, description = "File ID")
+    ),
+    responses(
+        (status = 200, description = "File deleted successfully", body = inline(serde_json::Value)),
+        (status = 404, description = "File not found", body = ApiErrorResponse),
+        (status = 403, description = "Forbidden - not your file", body = ApiErrorResponse),
+        (status = 401, description = "Unauthorized", body = ApiErrorResponse),
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn delete_file(
     State(file_service): State<FileService>,
     Extension(current_user): Extension<CurrentUser>,
@@ -138,6 +202,27 @@ pub async fn delete_file(
 }
 
 /// Get file metadata
+///
+/// Retrieves metadata for a specific file by its ID. Only the file owner
+/// can access their file metadata. Returns information like filename, size,
+/// content type, and upload date.
+#[utoipa::path(
+    get,
+    path = "/api/v1/files/{id}",
+    tag = "files",
+    params(
+        ("id" = Uuid, Path, description = "File ID")
+    ),
+    responses(
+        (status = 200, description = "File metadata retrieved successfully", body = FileMetadata),
+        (status = 404, description = "File not found", body = ApiErrorResponse),
+        (status = 403, description = "Forbidden - not your file", body = ApiErrorResponse),
+        (status = 401, description = "Unauthorized", body = ApiErrorResponse),
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn get_file_metadata(
     State(file_service): State<FileService>,
     Extension(current_user): Extension<CurrentUser>,
@@ -156,6 +241,21 @@ pub async fn get_file_metadata(
 }
 
 /// List user's files
+///
+/// Returns a list of all files uploaded by the authenticated user.
+/// Includes metadata for each file such as filename, size, content type, and upload date.
+#[utoipa::path(
+    get,
+    path = "/api/v1/files",
+    tag = "files",
+    responses(
+        (status = 200, description = "Files retrieved successfully", body = Vec<FileMetadata>),
+        (status = 401, description = "Unauthorized", body = ApiErrorResponse),
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn list_user_files(
     State(file_service): State<FileService>,
     Extension(current_user): Extension<CurrentUser>,
@@ -167,7 +267,22 @@ pub async fn list_user_files(
     Ok(respond_ok(files))
 }
 
-/// Get file statistics for the current user
+/// Get file statistics
+///
+/// Returns statistics about the authenticated user's file uploads, including
+/// total number of files, total storage used (in bytes and MB).
+#[utoipa::path(
+    get,
+    path = "/api/v1/files/stats",
+    tag = "files",
+    responses(
+        (status = 200, description = "Statistics retrieved successfully", body = FileStats),
+        (status = 401, description = "Unauthorized", body = ApiErrorResponse),
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn get_user_stats(
     State(file_service): State<FileService>,
     Extension(current_user): Extension<CurrentUser>,
@@ -179,11 +294,33 @@ pub async fn get_user_stats(
     Ok(respond_ok(stats))
 }
 
-/// Generate a presigned URL for temporary file access
-/// Useful for:
+/// Generate presigned URL
+///
+/// Generates a temporary presigned URL for secure file access without authentication.
+/// The URL expires after 1 hour (3600 seconds). Useful for:
 /// - Sharing private files securely
-/// - Direct browser uploads/downloads
+/// - Direct browser downloads
 /// - Granting time-limited access to external services
+///
+/// Only available for cloud storage providers (S3, GCS, Azure, Cloudinary).
+#[utoipa::path(
+    get,
+    path = "/api/v1/files/{id}/presigned-url",
+    tag = "files",
+    params(
+        ("id" = Uuid, Path, description = "File ID")
+    ),
+    responses(
+        (status = 200, description = "Presigned URL generated successfully", body = inline(serde_json::Value)),
+        (status = 404, description = "File not found", body = ApiErrorResponse),
+        (status = 403, description = "Forbidden - not your file", body = ApiErrorResponse),
+        (status = 501, description = "Not supported by current storage provider", body = ApiErrorResponse),
+        (status = 401, description = "Unauthorized", body = ApiErrorResponse),
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn generate_presigned_url(
     Path(file_id): Path<Uuid>,
     State(file_service): State<FileService>,

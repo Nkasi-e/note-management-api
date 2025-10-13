@@ -3,11 +3,15 @@ use sqlx::{FromRow, Type};
 use uuid::Uuid;
 use std::fmt;
 use std::str::FromStr;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, ToSchema)]
 #[sqlx(type_name = "user_role", rename_all = "lowercase")]
+#[schema(example = "user")]
 pub enum UserRole {
+    #[serde(rename = "user")]
     User,
+    #[serde(rename = "admin")]
     Admin,
 }
 
@@ -32,7 +36,7 @@ impl FromStr for UserRole {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct User {
     pub id: Uuid,
     pub name: String,
@@ -41,7 +45,7 @@ pub struct User {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CreateUserRequest {
     pub name: String,
     pub email: String,

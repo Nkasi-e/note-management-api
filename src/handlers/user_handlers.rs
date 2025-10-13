@@ -17,6 +17,26 @@ pub struct UserIdPath {
     pub id: String,
 }
 
+/// Create a new user (Admin only)
+///
+/// Creates a new user account. This endpoint is restricted to administrators only.
+/// Regular users should use the `/api/v1/auth/register` endpoint instead.
+#[utoipa::path(
+    post,
+    path = "/api/v1/users",
+    tag = "users",
+    request_body = CreateUserRequest,
+    responses(
+        (status = 201, description = "User created successfully", body = User),
+        (status = 400, description = "Invalid request body", body = ApiErrorResponse),
+        (status = 403, description = "Forbidden - admin only", body = ApiErrorResponse),
+        (status = 409, description = "User already exists", body = ApiErrorResponse),
+        (status = 401, description = "Unauthorized", body = ApiErrorResponse),
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn create_user(
     State(user_service): State<UserService>,
     Extension(current_user): Extension<CurrentUser>,
@@ -31,6 +51,28 @@ pub async fn create_user(
     Ok(respond_created(user))
 }
 
+/// Get user by ID
+///
+/// Retrieves a user's profile information. Users can only view their own profile,
+/// while administrators can view any user's profile.
+#[utoipa::path(
+    get,
+    path = "/api/v1/users/{id}",
+    tag = "users",
+    params(
+        ("id" = String, Path, description = "User ID (UUID format)")
+    ),
+    responses(
+        (status = 200, description = "User found successfully", body = User),
+        (status = 400, description = "Invalid user ID format", body = ApiErrorResponse),
+        (status = 404, description = "User not found", body = ApiErrorResponse),
+        (status = 403, description = "Forbidden - not your profile", body = ApiErrorResponse),
+        (status = 401, description = "Unauthorized", body = ApiErrorResponse),
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn get_user(
     State(user_service): State<UserService>,
     Extension(current_user): Extension<CurrentUser>,

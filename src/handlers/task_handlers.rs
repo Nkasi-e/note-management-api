@@ -4,9 +4,10 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 /// Response wrapper for dynamic task queries
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(untagged)]
 pub enum TaskQueryResponse {
     Simple(Vec<crate::domain::Task>),
@@ -50,6 +51,26 @@ pub struct DynamicTaskQuery {
     pub search: Option<String>,
 }
 
+/// Create a new task
+///
+/// Creates a new task for the authenticated user. Optionally attach files by
+/// providing their IDs in the attachment_ids array. The task will be created
+/// with a unique slug based on the title.
+#[utoipa::path(
+    post,
+    path = "/api/v1/tasks",
+    tag = "tasks",
+    request_body = CreateTaskRequest,
+    responses(
+        (status = 201, description = "Task created successfully", body = Task),
+        (status = 400, description = "Invalid request body", body = ApiErrorResponse),
+        (status = 404, description = "Attachment file not found", body = ApiErrorResponse),
+        (status = 401, description = "Unauthorized", body = ApiErrorResponse),
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn create_task(
     State(task_service): State<TaskService>,
     Extension(current_user): Extension<CurrentUser>,
@@ -64,6 +85,28 @@ pub async fn create_task(
     Ok(respond_created(task))
 }
 
+/// Get a specific task by ID
+///
+/// Retrieves a task by its ID. Users can only view their own tasks,
+/// while administrators can view any task.
+#[utoipa::path(
+    get,
+    path = "/api/v1/tasks/{id}",
+    tag = "tasks",
+    params(
+        ("id" = String, Path, description = "Task ID (UUID format)")
+    ),
+    responses(
+        (status = 200, description = "Task found successfully", body = Task),
+        (status = 400, description = "Invalid task ID format", body = ApiErrorResponse),
+        (status = 404, description = "Task not found", body = ApiErrorResponse),
+        (status = 403, description = "Forbidden - not your task", body = ApiErrorResponse),
+        (status = 401, description = "Unauthorized", body = ApiErrorResponse),
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn get_task(
     State(task_service): State<TaskService>,
     Extension(current_user): Extension<CurrentUser>,
@@ -84,6 +127,44 @@ pub async fn get_task(
     Ok(respond_ok(task))
 }
 
+/// List tasks with filtering and pagination
+///
+/// Returns a list of tasks. Supports both simple listing and advanced pagination
+/// with filtering. Non-admin users can only see their own tasks. Admins can view
+/// all tasks or filter by user_id.
+///
+/// Query parameters:
+/// - page, limit: Pagination (enables paginated response)
+/// - status: Filter by task status (todo, in_progress, done)
+/// - user_id: Filter by user (admin only)
+/// - search: Search in title and description
+/// - created_after, created_before: Date range filter (ISO 8601)
+/// - sort_by, sort_direction: Sorting options
+#[utoipa::path(
+    get,
+    path = "/api/v1/tasks",
+    tag = "tasks",
+    params(
+        ("page" = Option<u32>, Query, description = "Page number (default: 1)"),
+        ("limit" = Option<u32>, Query, description = "Items per page (default: 20, max: 100)"),
+        ("status" = Option<String>, Query, description = "Filter by status: todo, in_progress, done"),
+        ("user_id" = Option<String>, Query, description = "Filter by user ID (admin only)"),
+        ("search" = Option<String>, Query, description = "Search in title and description"),
+        ("created_after" = Option<String>, Query, description = "Filter by creation date (ISO 8601)"),
+        ("created_before" = Option<String>, Query, description = "Filter by creation date (ISO 8601)"),
+        ("sort_by" = Option<String>, Query, description = "Sort field (default: created_at)"),
+        ("sort_direction" = Option<String>, Query, description = "Sort direction: asc or desc (default: desc)"),
+    ),
+    responses(
+        (status = 200, description = "Tasks retrieved successfully", body = TaskQueryResponse),
+        (status = 400, description = "Invalid query parameters", body = ApiErrorResponse),
+        (status = 403, description = "Forbidden - insufficient permissions", body = ApiErrorResponse),
+        (status = 401, description = "Unauthorized", body = ApiErrorResponse),
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn get_tasks(
     State(task_service): State<TaskService>,
     Extension(current_user): Extension<CurrentUser>,

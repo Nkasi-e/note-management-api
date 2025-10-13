@@ -8,6 +8,8 @@ use note_task_api::{
     workers::{WorkerService, JobProcessor, JobQueueConfig},
     websocket::WebSocketManager,
     init_pg_pool,
+    // Import our OpenAPI documentation configuration
+    openapi::ApiDoc,
 };
 
 use axum::Router;
@@ -17,6 +19,14 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use redis::Client as RedisClient;
 use redis::aio::ConnectionManager as RedisConnectionManager;
 use note_task_api::cache::RedisCache;
+
+// ============================================================================
+// Swagger/OpenAPI Imports
+// ============================================================================
+// - OpenApi trait: Provides the .openapi() method to generate the spec
+// - SwaggerUi: Creates the interactive web UI for exploring the API
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 #[tokio::main]
 async fn main() {
@@ -82,12 +92,35 @@ async fn main() {
     let worker_service = WorkerService::new(cache.clone(), job_processor, worker_config)
         .with_websocket(ws_manager.clone());
 
-    // Router
+    // ========================================================================
+    // Router Configuration
+    // ========================================================================
     let app = Router::new()
+        // Merge all API routes
         .merge(health_routes())
         .merge(ws_routes(ws_manager.clone(), config.auth.clone()))
         .merge(api_v1_routes(user_service, task_service, auth_service, file_service, config.auth.clone(), Arc::new(worker_service.clone()), Arc::new(email_service)))
-        // Middleware
+        
+        // ====================================================================
+        // Swagger UI Integration
+        // ====================================================================
+        // This adds two routes to our application:
+        // 1. /swagger-ui - The interactive Swagger UI web interface
+        // 2. /api-docs/openapi.json - The raw OpenAPI JSON specification
+        //
+        // How it works:
+        // - SwaggerUi::new("/swagger-ui") creates a new Swagger UI at that path
+        // - .url(...) tells Swagger where to fetch the OpenAPI spec from
+        // - ApiDoc::openapi() generates the OpenAPI spec from our ApiDoc struct
+        //
+        // The generated spec includes all schemas marked with ToSchema and
+        // any endpoints marked with #[utoipa::path] (when we add them later)
+        .merge(
+            SwaggerUi::new("/swagger-ui")
+                .url("/api-docs/openapi.json", ApiDoc::openapi())
+        )
+        
+        // Apply middleware layers (order matters - they're applied bottom-up)
         .layer(axum::middleware::from_fn(request_logging_middleware))
         .layer(logging_middleware())
         .layer(axum::middleware::from_fn(json_404_middleware))
@@ -101,9 +134,28 @@ async fn main() {
         }
     });
 
-    // Start HTTP server
+    // ========================================================================
+    // Start HTTP Server
+    // ========================================================================
     let addr = SocketAddr::from((config.server.host.parse::<std::net::IpAddr>().unwrap(), config.server.port));
+    
+    // Log server startup information
     tracing::info!("Server running on http://{}", addr);
+    
+    // ========================================================================
+    // Swagger UI Access Information
+    // ========================================================================
+    // Log the URLs where users can access the API documentation
+    tracing::info!("📚 Swagger UI available at http://{}/swagger-ui", addr);
+    tracing::info!("📄 OpenAPI spec available at http://{}/api-docs/openapi.json", addr);
+    //
+    // What you can do with these URLs:
+    // - /swagger-ui: Interactive web interface to explore and test the API
+    // - /api-docs/openapi.json: Download the OpenAPI spec for use with:
+    //   * Postman (import collection)
+    //   * Code generators (generate client SDKs)
+    //   * API gateways (configure routing)
+    //   * Documentation sites (generate static docs)
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
