@@ -1,0 +1,2 @@
+k6 benchmark test file content
+Testing zero-copy optimization
