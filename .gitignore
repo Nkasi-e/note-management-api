@@ -35,3 +35,6 @@ ZERO_COPY_SUMMARY.md
 ARENA_ALLOCATION_SUMMARY.md
 BUMPALO_ARENA_ALLOCATION.md
 OPTIMIZATION_COMPARISON.md
+
+# Benchmark results (can be large, keep docs)
+benchmarks/results/
