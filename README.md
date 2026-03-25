@@ -7,34 +7,18 @@ A high-performance, production-ready task management REST API built with Rust, f
 [![Performance](https://img.shields.io/badge/performance-7600%2B%20req%2Fs-brightgreen.svg)]()
 
 ## 🚀 Features
+### Core Capabilities
+- Task CRUD with filtering and pagination
+- File uploads and task file attachments via multi-backend storage
+- JWT auth with role-based access (`User` / `Admin`)
+- Real-time updates over WebSocket
+- Background jobs for emails, cleanup, reports, and attachment processing
 
-### Core Functionality
-- **Task Management**: Create, read, update, and delete tasks with rich metadata
-- **File Attachments**: Upload and attach files to tasks with multi-cloud storage support
-- **User Authentication**: JWT-based authentication with role-based access control (User/Admin)
-- **Advanced Filtering**: Search, filter, and paginate tasks with flexible query parameters
-- **Real-time Updates**: WebSocket support for live notifications and updates
-
-### Performance Optimizations
-- **Zero-Copy File Handling**: Uses `bytes::Bytes` for efficient memory management
-- **Arena Allocation**: Custom memory allocator with `bumpalo` for temporary objects
-- **Shared String References**: `Arc<str>` for frequently accessed strings
-- **Redis Caching**: Fast in-memory caching for frequently accessed data
-- **Connection Pooling**: Optimized database connection management with SQLx
-
-### Storage & Infrastructure
-- **Multi-Cloud Storage**: Support for AWS S3, Google Cloud Storage, Azure Blob Storage, and Cloudinary
-- **Presigned URLs**: Secure, time-limited file access without authentication
-- **Local Storage**: Fallback option for development and testing
-- **Background Jobs**: Asynchronous job processing for emails and cleanup tasks
-- **Database Migrations**: Automated schema management with SQLx
-
-### Developer Experience
-- **Interactive API Documentation**: Swagger UI with "Try it out" functionality for all endpoints
-- **Comprehensive Testing**: Benchmarking suite with `wrk` and `k6`
-- **Makefile Commands**: Easy-to-use commands for common tasks
-- **Validation**: Request validation with detailed error messages
-- **Logging**: Structured logging with `tracing`
+### Implementation Highlights
+- `bytes::Bytes` for efficient payload handling (zero-copy friendly)
+- Request-scoped bump allocation (`bumpalo`) for temporary formatting/query building
+- Redis caching plus a Redis-backed worker queue
+- OpenAPI docs via `utoipa` + Swagger UI
 
 ## 📊 Performance Metrics
 
@@ -64,8 +48,8 @@ Based on benchmark results:
 
 - **Rust**: 1.70 or higher
 - **PostgreSQL**: 14 or higher
-- **Redis**: 6 or higher (optional, for caching)
-- **Docker**: For running PostgreSQL and Redis (optional)
+- **Redis**: 6 or higher (required; cache + worker queue)
+- **Docker**: Optional (handy for running PostgreSQL and Redis locally)
 
 ## 🚀 Quick Start
 
@@ -81,41 +65,59 @@ cd note-task-api
 Create a `.env` file in the project root:
 
 ```bash
-# Server Configuration
-SERVER_HOST=127.0.0.1
-SERVER_PORT=3001
+# Server
+APP_HOST=127.0.0.1
+APP_PORT=3001
 
-# Database Configuration
-DATABASE_URL=postgresql://postgres:password@localhost:5432/note_task_db
+# Database (PostgreSQL)
+DATABASE_URL=postgres://postgres:password@localhost:5432/note_task_db
 
-# Redis Configuration (optional)
-REDIS_URL=redis://localhost:6379
+# Redis (required; cache + background jobs)
+REDIS_URL=redis://127.0.0.1:6379
+REDIS_TTL_SECS=300
 
-# JWT Configuration
+# JWT Authentication
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
-JWT_EXPIRATION=86400
+JWT_ISSUER=note-task-api
+JWT_AUDIENCE=note-clients
+JWT_EXP_MINUTES=60
 
-# Storage Configuration
-# Options: local, s3, gcs, azure, cloudinary
-STORAGE_PROVIDER=local
+# Logging (optional)
+RUST_LOG=info
+LOG_FORMAT=json
+
+# Email (required by background email jobs)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your-email@example.com
+SMTP_PASSWORD=your-smtp-password-or-app-password
+FROM_EMAIL=noreply@yourdomain.com
+
+# Storage
+STORAGE_BACKEND=local
 UPLOAD_DIR=./uploads
+MAX_FILE_SIZE=10485760
+ALLOWED_EXTENSIONS=jpg,jpeg,png,gif,pdf,doc,docx,txt,zip
+SERVE_FILES=true
 
-# AWS S3 (if using S3)
+# --- Storage backend specific options (uncomment as needed) ---
+
+# AWS S3
 # AWS_REGION=us-east-1
-# AWS_ACCESS_KEY_ID=your-access-key
-# AWS_SECRET_ACCESS_KEY=your-secret-key
-# S3_BUCKET_NAME=your-bucket-name
+# AWS_S3_BUCKET=your-bucket-name
+# AWS_CDN_URL=optional-cdn-url
 
-# GCP Cloud Storage (if using GCS)
-# GCS_BUCKET_NAME=your-bucket-name
-# GCS_CREDENTIALS_PATH=./path/to/credentials.json
+# GCS
+# GCP_BUCKET=your-bucket-name
+# GCP_CDN_URL=optional-cdn-url
 
-# Azure Blob Storage (if using Azure)
-# AZURE_STORAGE_ACCOUNT=your-account
-# AZURE_STORAGE_ACCESS_KEY=your-key
-# AZURE_CONTAINER_NAME=your-container
+# Azure Blob Storage
+# AZURE_ACCOUNT_NAME=your-account
+# AZURE_ACCOUNT_KEY=your-key
+# AZURE_CONTAINER=your-container
+# AZURE_CDN_URL=optional-cdn-url
 
-# Cloudinary (if using Cloudinary)
+# Cloudinary
 # CLOUDINARY_CLOUD_NAME=your-cloud-name
 # CLOUDINARY_API_KEY=your-api-key
 # CLOUDINARY_API_SECRET=your-api-secret
@@ -353,99 +355,71 @@ After running benchmarks, results are saved in:
 ## 🔧 Makefile Commands
 
 ```bash
-# Development
-make dev              # Run in development mode
-make build            # Build the project
-make release          # Build optimized release
+# Run / type-check
+make run              # Start the API server
+make check            # Type-check
 
-# Database
-make db-setup         # Set up database
-make db-migrate       # Run migrations
-make db-reset         # Reset database
+# SQLx migrations
+make db-create       # Create DB (from DATABASE_URL)
+make db-ext          # Enable pgcrypto extension
+make migrate-run     # Run migrations
+make migrate-info    # Show migration status
 
-# Testing
-make test             # Run tests
-make benchmark        # Run all benchmarks
+# Development loop
+make watch-run       # Rebuild & restart on changes
 
-# Utilities
-make clean            # Clean build artifacts
-make fmt              # Format code
-make lint             # Run linter
+# Benchmarks
+make bench-install
+make bench-seed
+make bench-all
+make bench-load
+make bench-stress
+make bench-websocket
+make bench-results
+make bench-clean
 ```
 
-## 🏗️ Project Structure
+## 🏗️ Architecture
 
+```mermaid
+flowchart TD
+  Client[Client] --> Router[Axum Router]
+  Router --> Health[Health Routes (/health, /ping)]
+  Router --> API[API Routes (/api/v1)]
+  API --> Routes[Route Groups (auth, users, tasks, files, workers)]
+
+  Routes --> Handlers[HTTP Handlers (src/handlers/*)]
+  Handlers --> Services[Services (src/services/*)]
+  Services --> Repos[Repositories (src/repositories/*)]
+  Repos --> DB[(PostgreSQL)]
+
+  Services --> Cache[RedisCache (src/cache/*)]
+  Services --> Storage[StorageProvider via StorageFactory (src/storage/*)]
+  Services --> WSJobNotify[WorkerService enqueues jobs via workers routes]
+
+  Routes --> WS[WebSocket Routes (/ws, /ws/health)]
+  WS --> WSHandler[ws_handler + WebSocketManager (src/websocket/*)]
+  WSHandler --> WSNotify[WebSocketManager notifications]
+
+  WSJobNotify --> WorkerService[WorkerService + JobProcessor (src/workers/*)]
+  WorkerService --> Queue[Redis sorted-set queue]
+  WorkerService --> JobProcessor[Job execution]
+  JobProcessor --> Services
+  WorkerService --> WSNotify
 ```
-note-task-api/
-├── src/
-│   ├── main.rs                 # Application entry point
-│   ├── lib.rs                  # Library root
-│   ├── config/                 # Configuration management
-│   │   ├── mod.rs
-│   │   └── settings.rs
-│   ├── domain/                 # Domain models
-│   │   ├── mod.rs
-│   │   ├── user.rs
-│   │   ├── task.rs
-│   │   ├── file.rs
-│   │   ├── error.rs
-│   │   └── pagination.rs
-│   ├── handlers/               # HTTP request handlers
-│   │   ├── mod.rs
-│   │   ├── auth_handlers.rs
-│   │   ├── task_handlers.rs
-│   │   ├── file_handlers.rs
-│   │   ├── user_handlers.rs
-│   │   └── health_handlers.rs
-│   ├── services/               # Business logic
-│   │   ├── mod.rs
-│   │   ├── auth_service.rs
-│   │   ├── task_service.rs
-│   │   ├── file_service.rs
-│   │   ├── user_service.rs
-│   │   └── email_service.rs
-│   ├── repositories/           # Data access layer
-│   │   ├── mod.rs
-│   │   ├── user_repository.rs
-│   │   ├── task_repository.rs
-│   │   └── file_repository.rs
-│   ├── middleware/             # Custom middleware
-│   │   ├── mod.rs
-│   │   ├── auth.rs
-│   │   └── logging.rs
-│   ├── storage/                # Storage providers
-│   │   ├── mod.rs
-│   │   ├── local.rs
-│   │   ├── s3.rs
-│   │   ├── gcs.rs
-│   │   ├── azure.rs
-│   │   └── cloudinary.rs
-│   ├── workers/                # Background jobs
-│   │   ├── mod.rs
-│   │   ├── worker_service.rs
-│   │   └── job_processor.rs
-│   ├── websocket/              # WebSocket support
-│   │   ├── mod.rs
-│   │   └── manager.rs
-│   ├── cache/                  # Redis caching
-│   │   ├── mod.rs
-│   │   └── redis_cache.rs
-│   ├── arena/                  # Arena allocation
-│   │   ├── mod.rs
-│   │   └── query_builder.rs
-│   ├── openapi.rs              # OpenAPI/Swagger config
-│   ├── routes.rs               # Route definitions
-│   ├── validation.rs           # Request validation
-│   └── extractors.rs           # Custom extractors
-├── migrations/                 # Database migrations
-├── benchmarks/                 # Benchmark scripts
-│   ├── wrk/
-│   └── k6/
-├── Cargo.toml                  # Rust dependencies
-├── Makefile                    # Build commands
-├── .env.example                # Environment variables template
-└── README.md                   # This file
-```
+
+### Code Structure (layers in the codebase)
+
+- `src/main.rs`: runtime wiring (config, pools, router, starts `WorkerService`)
+- `src/routes/*`: URL nesting/prefixes and which handlers are mounted
+- `src/handlers/*`: HTTP handlers (request -> service calls -> responses)
+- `src/services/*`: business logic (auth, tasks, users, files, email)
+- `src/repositories/*`: SQLx DB access
+- `src/workers/*`: background job processing driven by Redis
+- `src/websocket/*`: WebSocket message routing/broadcasting
+- `src/cache/*`: Redis caching helpers
+- `src/storage/*`: storage backends implementing `StorageProvider`
+- `src/arena.rs`: request-scoped bump allocator for temporary allocations
 
 ## 🎯 Performance Optimizations
 
@@ -485,51 +459,16 @@ Uses `Arc<str>` for frequently accessed strings:
 - Thread-safe sharing
 
 ## 🌐 Multi-Cloud Storage
+The API selects a storage backend via `STORAGE_BACKEND` (see the environment variable section above). Each backend implements `StorageProvider` (`src/storage/*`) and is constructed by `StorageFactory`.
 
-The API supports multiple storage providers. Switch between them by changing the `STORAGE_PROVIDER` environment variable.
+Supported backends:
+- `local`
+- `s3`
+- `gcs`
+- `azure`
+- `cloudinary`
 
-### Local Storage (Development)
-
-```env
-STORAGE_PROVIDER=local
-UPLOAD_DIR=./uploads
-```
-
-### AWS S3
-
-```env
-STORAGE_PROVIDER=s3
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-access-key
-AWS_SECRET_ACCESS_KEY=your-secret-key
-S3_BUCKET_NAME=your-bucket-name
-```
-
-### Google Cloud Storage
-
-```env
-STORAGE_PROVIDER=gcs
-GCS_BUCKET_NAME=your-bucket-name
-GCS_CREDENTIALS_PATH=./credentials.json
-```
-
-### Azure Blob Storage
-
-```env
-STORAGE_PROVIDER=azure
-AZURE_STORAGE_ACCOUNT=your-account
-AZURE_STORAGE_ACCESS_KEY=your-key
-AZURE_CONTAINER_NAME=your-container
-```
-
-### Cloudinary
-
-```env
-STORAGE_PROVIDER=cloudinary
-CLOUDINARY_CLOUD_NAME=your-cloud-name
-CLOUDINARY_API_KEY=your-api-key
-CLOUDINARY_API_SECRET=your-api-secret
-```
+Presigned URLs are supported by the cloud backends. The `local` backend does not generate presigned URLs and instead returns the normal download URL.
 
 ## 🔒 Security Features
 
@@ -538,8 +477,7 @@ CLOUDINARY_API_SECRET=your-api-secret
 - **Role-Based Access Control**: User and Admin roles
 - **Input Validation**: Comprehensive request validation
 - **SQL Injection Prevention**: Compile-time checked queries with SQLx
-- **CORS**: Configurable cross-origin resource sharing
-- **Rate Limiting**: (TODO) Prevent abuse
+- **CORS**: Enabled (permissive; allow-all by default)
 
 ## 🐛 Troubleshooting
 
