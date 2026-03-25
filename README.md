@@ -383,27 +383,27 @@ make bench-clean
 
 ```mermaid
 flowchart TD
-  Client[Client] --> Router[Axum Router]
-  Router --> Health[Health Routes (/health, /ping)]
-  Router --> API[API Routes (/api/v1)]
-  API --> Routes[Route Groups (auth, users, tasks, files, workers)]
+  Client["Client"] --> Router["Axum Router"]
+  Router --> Health["Health Routes: /health, /ping"]
+  Router --> API["API Routes: /api/v1"]
+  API --> Routes["Route Groups: auth, users, tasks, files, workers"]
 
-  Routes --> Handlers[HTTP Handlers (src/handlers/*)]
-  Handlers --> Services[Services (src/services/*)]
-  Services --> Repos[Repositories (src/repositories/*)]
+  Routes --> Handlers["HTTP Handlers: src/handlers/*"]
+  Handlers --> Services["Services: src/services/*"]
+  Services --> Repos["Repositories: src/repositories/*"]
   Repos --> DB[(PostgreSQL)]
 
-  Services --> Cache[RedisCache (src/cache/*)]
-  Services --> Storage[StorageProvider via StorageFactory (src/storage/*)]
-  Services --> WSJobNotify[WorkerService enqueues jobs via workers routes]
+  Services --> Cache["RedisCache: src/cache/*"]
+  Services --> Storage["StorageProvider + StorageFactory: src/storage/*"]
+  Services --> WSJobNotify["Workers route integration"]
 
-  Routes --> WS[WebSocket Routes (/ws, /ws/health)]
-  WS --> WSHandler[ws_handler + WebSocketManager (src/websocket/*)]
-  WSHandler --> WSNotify[WebSocketManager notifications]
+  Routes --> WS["WebSocket Routes: /ws, /ws/health"]
+  WS --> WSHandler["ws_handler + WebSocketManager: src/websocket/*"]
+  WSHandler --> WSNotify["WebSocket notifications"]
 
-  WSJobNotify --> WorkerService[WorkerService + JobProcessor (src/workers/*)]
-  WorkerService --> Queue[Redis sorted-set queue]
-  WorkerService --> JobProcessor[Job execution]
+  WSJobNotify --> WorkerService["WorkerService + JobProcessor: src/workers/*"]
+  WorkerService --> Queue["Redis sorted-set queue"]
+  WorkerService --> JobProcessor["Job execution"]
   JobProcessor --> Services
   WorkerService --> WSNotify
 ```
