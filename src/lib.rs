@@ -14,6 +14,7 @@ pub mod workers;
 pub mod websocket;
 pub mod storage;
 pub mod arena;
+pub mod openapi;
 
 // Re-export commonly used types for convenience
 pub use domain::error::{ApiError, Result};

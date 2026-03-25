@@ -3,9 +3,20 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use thiserror::Error;
 use uuid::Uuid;
+use utoipa::ToSchema;
+
+/// API Error Response Schema for OpenAPI documentation
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ApiErrorResponse {
+    pub success: bool,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+}
 
 #[derive(Error, Debug)]
 pub enum ApiError {

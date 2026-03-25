@@ -38,3 +38,5 @@ OPTIMIZATION_COMPARISON.md
 
 # Benchmark results (can be large, keep docs)
 benchmarks/results/
+SWAGGER_DOCUMENTATION.md
+SWAGGER_IMPLEMENTATION_COMPLETE.md

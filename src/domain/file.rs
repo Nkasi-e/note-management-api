@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use utoipa::ToSchema;
 
 /// File metadata stored in database
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
 pub struct FileMetadata {
     pub id: Uuid,
     pub filename: String,
@@ -23,7 +24,7 @@ pub struct UploadFileRequest {
 }
 
 /// Response after uploading a file
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct UploadFileResponse {
     pub id: Uuid,
     pub filename: String,
@@ -49,7 +50,7 @@ impl From<FileMetadata> for UploadFileResponse {
 }
 
 /// File upload statistics
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct FileStats {
     pub total_files: i64,
     pub total_size: i64,

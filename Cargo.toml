@@ -31,6 +31,10 @@ bytes = "1.0"
 async-trait = "0.1"
 bumpalo = { version = "3.14", features = ["collections"] }
 
+# OpenAPI/Swagger documentation
+utoipa = { version = "4.2", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
+
 # AWS S3 (optional - only needed if using S3 backend)
 aws-sdk-s3 = { version = "1.9", optional = true }
 aws-config = { version = "1.1", optional = true }

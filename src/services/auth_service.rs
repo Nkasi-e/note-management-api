@@ -6,21 +6,69 @@ use argon2::{password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, Sal
 use jsonwebtoken::{encode, EncodingKey, Header};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
+// Import ToSchema to make these types documentable in OpenAPI/Swagger
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// ============================================================================
+// Authentication Request/Response Types
+// ============================================================================
+// These structs define the shape of data for authentication endpoints.
+// The ToSchema derive makes them appear in the Swagger UI documentation.
+
+/// Request body for user registration
+///
+/// ToSchema generates OpenAPI documentation showing:
+/// - Required fields: name, email, password
+/// - Field types: all String
+/// - Example values in Swagger UI
+///
+/// Example JSON:
+/// ```json
+/// {
+///   "name": "John Doe",
+///   "email": "john@example.com",
+///   "password": "SecurePassword123!"
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct RegisterRequest {
     pub name: String,
     pub email: String,
     pub password: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Request body for user login
+///
+/// ToSchema generates OpenAPI documentation showing:
+/// - Required fields: email, password
+/// - Field types: both String
+///
+/// Example JSON:
+/// ```json
+/// {
+///   "email": "john@example.com",
+///   "password": "SecurePassword123!"
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct LoginRequest {
     pub email: String,
     pub password: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Response containing JWT authentication token
+///
+/// ToSchema generates OpenAPI documentation showing:
+/// - Response field: token (String)
+/// - This is what users receive after successful login/registration
+///
+/// Example JSON:
+/// ```json
+/// {
+///   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TokenResponse {
     pub token: String,
 }

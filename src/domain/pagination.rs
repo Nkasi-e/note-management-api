@@ -2,9 +2,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use crate::domain::task::TaskStatus;
+use utoipa::ToSchema;
 
 /// Pagination parameters for task queries
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PaginationParams {
     /// Page number (1-based)
     #[serde(default = "default_page")]
@@ -24,7 +25,7 @@ pub struct PaginationParams {
 }
 
 /// Task filtering parameters
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TaskFilters {
     /// Filter by task status
     pub status: Option<TaskStatus>,
@@ -43,7 +44,7 @@ pub struct TaskFilters {
 }
 
 /// Combined query parameters for tasks
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TaskQueryParams {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -53,7 +54,7 @@ pub struct TaskQueryParams {
 }
 
 /// Pagination metadata for responses
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PaginationMeta {
     /// Current page number
     pub page: u32,
@@ -75,7 +76,7 @@ pub struct PaginationMeta {
 }
 
 /// Paginated response wrapper
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PaginatedResponse<T> {
     /// The actual data
     pub data: Vec<T>,
